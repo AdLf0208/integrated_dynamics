@@ -1,0 +1,10 @@
+{
+  "icon": "integrateddynamics:cable",
+  "items": [
+    "integrateddynamics:cable",
+    "integrateddynamics:part_redstone_reader",
+    "integrateddynamics:part_redstone_writer",
+    "integrateddynamics:crystalized_menril_chunk"
+  ],
+  "title": "Integrated Dynamics"
+}

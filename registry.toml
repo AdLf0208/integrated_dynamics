@@ -1,0 +1,49 @@
+id = "integrateddynamics"
+kind = "native-mod"
+name = "integrateddynamics"
+summary = "A Horizon port of integrateddynamics."
+description = """
+A port of [integrateddynamics](CyclopsMC/IntegratedDynamics) for Horizon.
+
+**Implemented so far**
+
+- A Logic Cable, a **Redstone Reader** part and a **Redstone Writer** part. The
+- reader samples the redstone level of the block on its face into the cable
+- network's channel; every writer on the connected network emits that level on its
+- own face. It is upstream's `redstone_transmission` advancement without the
+- variable-card layer.
+- `integrateddynamics:cable`** — a non-occluding 4 px core
+- (`CableModel.MIN..MAX`, hardness 3.0F), six `part_<face>` enum properties
+- (`none|reader|writer`), a `status` property (`inactive|active`), a block
+
+**Not yet ported**
+
+- the **variable system**: variable store, logic programmer, materializer,
+- proxy, delay, variable cards/transformers — the whole typed value layer;
+- every other part (inventory/fluid/energy/entity/machine/world/audio/
+- network/effect/panel/connector) and the **facade**/fake-cable placement;
+- the **screens** (part settings, writer aspect card slot, display panel);
+- energy consumption** of parts and the network's power (upstream's
+- `getConsumptionRate`);
+- the **menril resource chain** (log/wood/chunk smelting/squeezer/basin) beyond
+
+Original copyright and licence notices are kept in this repository. Pinned to
+Horizon 1d63e0a and horizon-mixins 5a64af93. Help with the remaining slices is
+welcome.
+"""
+authors = ["AdLf0208"]
+owners = ["AdLf0208"]
+owner_ids = [107615167]
+license = "MIT"
+source = "https://github.com/AdLf0208/integrateddynamics"
+icon = "icons/integrateddynamics.png"
+categories = ["utility"]
+tags = ["port", "horizon"]
+
+[[versions]]
+version = "0.1.0"
+published = "2026-11-10"
+game = "26.3"
+file = "integrateddynamics.hnmod"
+sha256 = "7828afa6308b8bdc1e5ff28924d90cd819fee91c67f2eaebc4af56ff8a4eba71"
+changelog = "First release"

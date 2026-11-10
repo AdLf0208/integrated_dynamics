@@ -1,0 +1,180 @@
+{
+  "multipart": [
+    {
+      "apply": {
+        "model": "integrateddynamics:block/cable_core"
+      }
+    },
+    {
+      "apply": {
+        "model": "integrateddynamics:block/part_redstone_reader",
+        "x": 270
+      },
+      "when": {
+        "part_down": "reader"
+      }
+    },
+    {
+      "apply": {
+        "model": "integrateddynamics:block/part_redstone_writer_inactive",
+        "x": 270
+      },
+      "when": {
+        "part_down": "writer",
+        "status": "inactive"
+      }
+    },
+    {
+      "apply": {
+        "model": "integrateddynamics:block/part_redstone_writer_active",
+        "x": 270
+      },
+      "when": {
+        "part_down": "writer",
+        "status": "active"
+      }
+    },
+    {
+      "apply": {
+        "model": "integrateddynamics:block/part_redstone_reader",
+        "x": 90
+      },
+      "when": {
+        "part_up": "reader"
+      }
+    },
+    {
+      "apply": {
+        "model": "integrateddynamics:block/part_redstone_writer_inactive",
+        "x": 90
+      },
+      "when": {
+        "part_up": "writer",
+        "status": "inactive"
+      }
+    },
+    {
+      "apply": {
+        "model": "integrateddynamics:block/part_redstone_writer_active",
+        "x": 90
+      },
+      "when": {
+        "part_up": "writer",
+        "status": "active"
+      }
+    },
+    {
+      "apply": {
+        "model": "integrateddynamics:block/part_redstone_reader",
+        "y": 180
+      },
+      "when": {
+        "part_north": "reader"
+      }
+    },
+    {
+      "apply": {
+        "model": "integrateddynamics:block/part_redstone_writer_inactive",
+        "y": 180
+      },
+      "when": {
+        "part_north": "writer",
+        "status": "inactive"
+      }
+    },
+    {
+      "apply": {
+        "model": "integrateddynamics:block/part_redstone_writer_active",
+        "y": 180
+      },
+      "when": {
+        "part_north": "writer",
+        "status": "active"
+      }
+    },
+    {
+      "apply": {
+        "model": "integrateddynamics:block/part_redstone_reader"
+      },
+      "when": {
+        "part_south": "reader"
+      }
+    },
+    {
+      "apply": {
+        "model": "integrateddynamics:block/part_redstone_writer_inactive"
+      },
+      "when": {
+        "part_south": "writer",
+        "status": "inactive"
+      }
+    },
+    {
+      "apply": {
+        "model": "integrateddynamics:block/part_redstone_writer_active"
+      },
+      "when": {
+        "part_south": "writer",
+        "status": "active"
+      }
+    },
+    {
+      "apply": {
+        "model": "integrateddynamics:block/part_redstone_reader",
+        "y": 90
+      },
+      "when": {
+        "part_west": "reader"
+      }
+    },
+    {
+      "apply": {
+        "model": "integrateddynamics:block/part_redstone_writer_inactive",
+        "y": 90
+      },
+      "when": {
+        "part_west": "writer",
+        "status": "inactive"
+      }
+    },
+    {
+      "apply": {
+        "model": "integrateddynamics:block/part_redstone_writer_active",
+        "y": 90
+      },
+      "when": {
+        "part_west": "writer",
+        "status": "active"
+      }
+    },
+    {
+      "apply": {
+        "model": "integrateddynamics:block/part_redstone_reader",
+        "y": 270
+      },
+      "when": {
+        "part_east": "reader"
+      }
+    },
+    {
+      "apply": {
+        "model": "integrateddynamics:block/part_redstone_writer_inactive",
+        "y": 270
+      },
+      "when": {
+        "part_east": "writer",
+        "status": "inactive"
+      }
+    },
+    {
+      "apply": {
+        "model": "integrateddynamics:block/part_redstone_writer_active",
+        "y": 270
+      },
+      "when": {
+        "part_east": "writer",
+        "status": "active"
+      }
+    }
+  ]
+}

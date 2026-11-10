@@ -1,0 +1,156 @@
+[mod]
+id = "integrateddynamics"
+version = "0.1.0"
+priority = 100
+
+[compatibility]
+horizon_revision = "1d63e0a5a37a7a708eb0b32b49bf0dfeb28ed8a9"
+
+# The pure cable model (standalone crate lib, injected as
+# `crate::game::integrateddynamics`): the six part slots, the saved mask, the
+# channel value and the per-face redstone answer.
+[[module]]
+id = "runtime"
+file = "crates/horizon-client/src/game.rs"
+name = "integrateddynamics"
+source = "runtime.rs"
+
+# Game-side glue: the cable block entity, the per-tick network evaluation and
+# the `/integrateddynamics` harness commands.
+[[module]]
+id = "state"
+file = "crates/horizon-client/src/game.rs"
+name = "integrateddynamics_state"
+source = "support.rs"
+
+# The content half is inside this bundle (`data/integrateddynamics-content.hmod`, the built
+# `content/integrateddynamics.hmod`): this writes it to `.horizon-cache/` and appends it to the
+# dev-mod list, so one `.hnmod` installs the cable and the parts. The registry keeps one file per
+# project, so a split port could not be listed; AE2 ships the same pattern.
+[[injection]]
+id = "embedded-content"
+kind = "HEAD"
+cancellable = true
+target = "horizon_client::game::mods::content_root"
+helper = "embedded_content.rs"
+bindings = [
+  { name = "root", ty = "&std::path::Path", value = "root" },
+  { name = "enabled", ty = "&std::collections::BTreeSet<String>", value = "enabled" },
+  { name = "dev", ty = "&[std::path::PathBuf]", value = "dev" },
+]
+
+# A placed cable gets a block entity for its channel value (API 15).
+[[injection]]
+id = "block-entity"
+hook = "block_entity"
+hook_version = 1
+kind = "HEAD"
+helper = "block_entity.rs"
+bindings = [
+  { name = "block", ty = "&str", value = "block" },
+  { name = "entity", ty = "&mut Option<(String, horizon_world::nbt::Compound)>", value = "entity" },
+]
+
+# ... and ticks on the server (API 15).
+[[injection]]
+id = "block-entity-ticks"
+hook = "block_entity_ticks"
+hook_version = 1
+kind = "HEAD"
+helper = "block_entity_ticks.rs"
+bindings = [
+  { name = "block", ty = "&str", value = "block" },
+  { name = "ticks", ty = "&mut bool", value = "ticks" },
+]
+
+# The cable's own tick queues it for the level tick's end (API 15).
+[[injection]]
+id = "block-entity-tick"
+hook = "block_entity_tick"
+hook_version = 1
+kind = "HEAD"
+helper = "block_entity_tick.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+  { name = "pos", ty = "[i32; 3]", value = "pos" },
+  { name = "entity", ty = "&horizon_client::containers::ModBlockEntity", value = "entity" },
+]
+
+# End of the level tick: recompute every queued cable network (API 23).
+[[injection]]
+id = "level-tick-post"
+hook = "level_tick_post"
+hook_version = 1
+kind = "HEAD"
+helper = "level_tick.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+  { name = "dimension", ty = "&str", value = "dimension" },
+]
+
+# A writer face answers the channel value as a weak redstone signal (API 38).
+[[injection]]
+id = "block-signal"
+hook = "block_signal"
+hook_version = 1
+kind = "HEAD"
+helper = "block_signal.rs"
+bindings = [
+  { name = "level", ty = "&crate::game::GameLevel<'_>", value = "self" },
+  { name = "pos", ty = "BlockPos", value = "pos" },
+  { name = "state", ty = "BlockStateId", value = "state" },
+  { name = "face", ty = "Direction", value = "face" },
+  { name = "direct", ty = "bool", value = "direct" },
+  { name = "signal", ty = "&mut i32", value = "signal" },
+]
+
+# A cable with a writer is a signal source (API 38).
+[[injection]]
+id = "is-signal-source"
+hook = "is_signal_source"
+hook_version = 1
+kind = "HEAD"
+helper = "is_signal_source.rs"
+bindings = [
+  { name = "level", ty = "&crate::game::GameLevel<'_>", value = "self" },
+  { name = "state", ty = "BlockStateId", value = "state" },
+  { name = "source", ty = "&mut bool", value = "source" },
+]
+
+# Right-clicking a cable face with a part item places it on that face (API 21).
+[[injection]]
+id = "right-click-block"
+hook = "right_click_block"
+hook_version = 1
+kind = "HEAD"
+helper = "right_click.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+  { name = "pos", ty = "[i32; 3]", value = "pos" },
+  { name = "face", ty = "[i32; 3]", value = "face" },
+  { name = "canceled", ty = "&mut bool", value = "canceled" },
+]
+
+# `/integrateddynamics info|part` (API 8).
+[[injection]]
+id = "register-commands"
+hook = "register_commands"
+hook_version = 1
+kind = "HEAD"
+helper = "register_commands.rs"
+bindings = [
+  { name = "commands", ty = "&mut Vec<NativeCommand>", value = "commands" },
+]
+
+[[injection]]
+id = "perform-command"
+hook = "perform_command"
+hook_version = 1
+kind = "HEAD"
+helper = "perform_command.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+  { name = "player", ty = "&NativeServerPlayer", value = "player" },
+  { name = "command", ty = "&str", value = "command" },
+  { name = "ran", ty = "&mut bool", value = "ran" },
+]

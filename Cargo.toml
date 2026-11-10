@@ -1,0 +1,18 @@
+[package]
+# Ported from: Integrated Dynamics 1.38.2 (CyclopsMC/IntegratedDynamics, MIT),
+# Minecraft Java 1.21.1 NeoForge. Local-only until the maintainer approves
+# publishing; a published port travels under MIT with its copyright notice.
+name = "horizon-integrateddynamics"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.95"
+license = "MIT"
+description = "Integrated Dynamics for Horizon: the Logic Cable with Redstone Reader and Writer parts"
+
+[lib]
+# This exact source is also injected as a same-crate module by horizon-mixins.
+path = "mixins/integrateddynamics/runtime.rs"
+
+[workspace]
+members = ["tools/audit"]
+resolver = "2"

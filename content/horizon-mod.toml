@@ -1,0 +1,13 @@
+# Port-owned content mod for Integrated Dynamics 1.38.2 (MIT,
+# CyclopsMC/IntegratedDynamics): the Logic Cable block, the Redstone Reader and
+# Redstone Writer part items, the crystalized menril chunk item, their models,
+# textures, lang, recipe and loot. The cable's network behaviour and the parts
+# are the native half in ports/integrateddynamics/mixins.
+id = "integrateddynamics"
+name = "Integrated Dynamics"
+version = "0.1.0"
+description = "Logic networks for Horizon: a Logic Cable with Redstone Reader and Writer parts."
+authors = ["rubensworks (aka kroeser)"]
+api = "0.2"
+side = "both"
+capabilities = ["registries"]
