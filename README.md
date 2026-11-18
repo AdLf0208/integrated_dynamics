@@ -1,57 +1,68 @@
-# Integrated Dynamics → Horizon (slice 1)
+# Integrated Dynamics — a Horizon port
 
-A Horizon port of **Integrated Dynamics 1.38.2** (`CyclopsMC/IntegratedDynamics`,
-**MIT**), Minecraft 1.21.1 NeoForge, from the exact ATM10 pack jar.
+**Integrated Dynamics** is a Minecraft mod. A Minecraft mod to take full and automated control of your appliances. This repository is a **port of it to [Horizon](https://github.com/horizon-rust/horizon)**, the Rust engine for Minecraft Java 26.3. It carries the complete source of the port plus the content files it ships, and installs as a single `.hmod` package.
 
-**Slice 1 is the redstone network:** a **Logic Cable** with a **Redstone Reader**
-and a **Redstone Writer** part. The reader samples the redstone level of the
-block on its face into the cable network's channel, and every writer on the
-connected network emits that level on its own face. It is the mod's
-`redstone_transmission` advancement without the variable-card layer.
+Upstream: [CyclopsMC/IntegratedDynamics](https://github.com/CyclopsMC/IntegratedDynamics) — licence **MIT**.
 
-What is not here: the variable store, logic programmer, materializer, proxy,
-delay, every other part, the machines, the menril resource chain beyond the
-crystallized chunk the cable recipe needs, screens, energy consumption and the
-multipart cable renderer. See `notes.md` for the full slice boundary and gaps.
+| | |
+|---|---|
+| Upstream mod | Integrated Dynamics ([source](https://github.com/CyclopsMC/IntegratedDynamics)) |
+| Ported to | Horizon 0b14f8a, Minecraft Java 26.3, mod API `0.2` |
+| Package | `integrateddynamics.hmod` (install it with the Horizon launcher) |
+| Licence | **MIT** — the upstream mod's licence; see [Licence and credit](#licence-and-credit) |
 
-## The package
+## What this port implements
 
-One flat `.hmod` (Horizon mod API 0.2), content and code together:
+- **`integrateddynamics:cable`** — a non-occluding 4 px core
+- **Parts** — `integrateddynamics:part_redstone_reader` and
+- **Reader** — `LevelRef::signal(pos, direction)` (the pin's per-face
+- **Writer** — the cable's `block_signal` part answers the channel on the
+- **Network** — the connected cable set (6-way adjacency, bounded to 1,024
+- **Cadence** — a cable's block-entity tick only **queues** it; the network is
+- **Harness readout** — `/integrateddynamics info <x> <y> <z>` prints the six
+- **A block-scoped moment is a Part.** `block_signal`, `is_signal_source`,
 
-```text
-integrateddynamics.hmod
-  horizon-mod.toml   the manifest and the only identity (0.2.0)
-  Cargo.toml         horizon-mod-api from .horizon/sdk/ (fetched, never shipped)
-  src/lib.rs         the one #[mod_api::horizon_mod] impl Hooks + the cable's Parts
-  src/runtime.rs     the pure cable rules (byte-identical to the 0.1.0 file)
-  src/support.rs     the glue: network recompute, block entity value, commands
-  assets/integrateddynamics/   models, textures, lang
-  data/integrateddynamics/     block/item definitions, recipe, loot, tag
-  LICENSE, LICENSE-NOTICE.md
+## Not yet ported
+
+- the **variable system**: variable store, logic programmer, materializer,
+- every other part (inventory/fluid/energy/entity/machine/world/audio/
+- the **screens** (part settings, writer aspect card slot, display panel);
+- **energy consumption** of parts and the network's power (upstream's
+- the **menril resource chain** (log/wood/chunk smelting/squeezer/basin) beyond
+- the **machines** (coal generator, energy battery, squeezer/drying basin);
+- the multipart cable **renderer** (arms, facades, lit tint, part animations);
+- per-face channels (upstream one variable per reader) — this slice is one
+
+## Installing
+
+1. Install the [Horizon launcher](https://github.com/horizon-rust/horizon/releases) (0.2.70 or newer).
+2. Add `integrateddynamics.hmod` to the instance's mods.
+3. The package is pinned to a specific Horizon build; the launcher checks that pin.
+
+## Licence and credit
+
+Integrated Dynamics was created by its upstream authors; the code, models and assets in the original mod
+remain theirs and are used here under **MIT**. The Rust in this repository is a clean-room
+rewrite for Horizon, not a translation of the original source.
+
+- `LICENSE` — the upstream licence text.
+- `LICENSE-NOTICE.md` — what this port carries and where it came from.
+- The upstream project: https://github.com/CyclopsMC/IntegratedDynamics
+
+## Technical details
+
+```
+horizon-mod.toml   package manifest (id, version, api, [native] pin)
+Cargo.toml         the crate; depends on `horizon-mod-api` from the fetched SDK
+src/               lib.rs (the one `impl Hooks`), runtime.rs (pure logic + tests), glue
+assets/ data/      the content the package ships
+tools/             content generators and the e2e scenario
 ```
 
-The pre-migration `.hnmod` and its `mixins/` tree are kept, not shipped, under
-`ports/_shared/evidence/integrateddynamics/retired-hnmod-0.1.0/`.
+- Build: `cargo horizon-mod build` (packages; it does not compile against the game).
+- Test: `cargo test`, `cargo clippy --all-targets -- -D warnings`.
+- In-game: `ports/tools/launcher-game.sh run integrateddynamics` in the campaign tree, or install the
+  `.hmod` and play; the harness scenario is `tools/e2e.sh`.
 
-## Building and checking
-
-```sh
-BUILD_LOCAL=1 ports/tools/build-slot.sh run --job sdk-id --port ports/integrateddynamics \
-    --step test -- env -C ports/integrateddynamics CARGO_INCREMENTAL=0 cargo test
-rm -f ports/integrateddynamics/Cargo.lock
-BUILD_LOCAL=1 ports/tools/build-slot.sh run --job sdk-id --port ports/integrateddynamics \
-    --step build -- env -C ports/integrateddynamics CARGO_INCREMENTAL=0 cargo horizon-mod build
-cp ports/integrateddynamics/target/horizon-mod/integrateddynamics.hmod ports/integrateddynamics/
-cargo horizon-mod check ports/integrateddynamics/integrateddynamics.hmod
-cargo horizon-mod fits ports/integrateddynamics/integrateddynamics.hmod --build nightly
-```
-
-The in-game scenario (`tools/e2e.sh`) needs a **launcher-built** game:
-`horizon-launcher native-build ports/integrateddynamics --instance <i> --trust-native-code`,
-then `GAME=<instance horizon-client> CTL=… tools/e2e.sh`.
-
-The jar is evidence at
-`ports/_shared/carry-work/integrateddynamics/integrateddynamics-1.21.1-neoforge-1.38.2.jar`
-(SHA-1 `1a77cf34…c600`, the pack record's hash).
-
-**Local-only** until the maintainer approves publishing (ARCHITECTURE.md §8).
+This repository is generated from the campaign's port at `ports/integrateddynamics/`; the port's own
+`notes.md` is the full record (decisions, traps, evidence).
