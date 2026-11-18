@@ -1,0 +1,7 @@
+{
+  "block.integrateddynamics.cable": "Logic Cable",
+  "item.integrateddynamics.crystalized_menril_chunk": "Crystallized Menril Chunk",
+  "item.integrateddynamics.part_redstone_reader": "Redstone Reader",
+  "item.integrateddynamics.part_redstone_writer": "Redstone Writer",
+  "itemGroup.integrateddynamics.integrateddynamics": "Integrated Dynamics"
+}

@@ -1,0 +1,6 @@
+{
+  "parent": "minecraft:item/generated",
+  "textures": {
+    "layer0": "integrateddynamics:item/crystalized_menril_chunk"
+  }
+}

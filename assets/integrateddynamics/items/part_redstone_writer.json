@@ -1,0 +1,6 @@
+{
+  "model": {
+    "model": "integrateddynamics:item/part_redstone_writer",
+    "type": "minecraft:model"
+  }
+}

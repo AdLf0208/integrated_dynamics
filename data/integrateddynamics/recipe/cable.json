@@ -1,0 +1,19 @@
+{
+  "category": "misc",
+  "group": "integrateddynamics:cable",
+  "key": {
+    "C": "integrateddynamics:crystalized_menril_chunk",
+    "R": "#c:dusts/redstone",
+    "S": "minecraft:stick"
+  },
+  "pattern": [
+    "CSC",
+    "CRC",
+    "CSC"
+  ],
+  "result": {
+    "count": 3,
+    "id": "integrateddynamics:cable"
+  },
+  "type": "minecraft:crafting_shaped"
+}
