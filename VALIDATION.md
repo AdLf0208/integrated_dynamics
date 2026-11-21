@@ -1,10 +1,40 @@
 # Validation
 
-> **Historical (0.1.0, `.hnmod`).** This file records the retired container's
-> ladder at pin `1d63e0a5…`. The SDK package (0.2.0) at nightly `0b14f8a` is
-> verified in [`notes.md`](notes.md) §Verification; the commands below no longer
-> exist (`tools/horizon.py`, `tools/package.sh`), and the artifacts they list are
-> kept under `ports/_shared/evidence/integrateddynamics/retired-hnmod-0.1.0/`.
+## 0.2.2 — slice 2 (World Reader), pin `0a875da` (2026-11-21)
+
+All compile/packaging steps through `ports/tools/build-slot.sh` (`BUILD_LOCAL=1`,
+`CARGO_INCREMENTAL=0`, no `--target-dir`); the game leg through
+`launcher-game.sh build` + a leased `e2e`. Logs:
+`ports/_shared/evidence/integrateddynamics/` and
+`ports/_shared/evidence/integrateddynamics-e2e/`.
+
+| Step | Command | Result |
+|---|---|---|
+| tests | `cargo test` | **24 passed**, 0 failed — `sdk-test.log` |
+| lints | `cargo clippy --all-targets -- -D warnings` | 0 warnings — `sdk-clippy.log` |
+| formatting | `cargo fmt --check` | clean — `sdk-fmt.log` |
+| package | `rm -f Cargo.lock; cargo horizon-mod build` twice, `cmp` | byte-identical — delivered `aba56130…b726d72f` |
+| package check | `cargo horizon-mod check integrateddynamics.hmod` | exit 0, `0.2.2 … native-1/0a875da…/e59da909…`, `46457 bytes` — `sdk-check.log` |
+| fits, the pin | `cargo horizon-mod fits … --build 0a875da` | `0a875da  made for` — `sdk-fits.log` |
+| fits, a different build | `cargo horizon-mod fits … --build 0b14f8a` | `0b14f8a  fits` — `sdk-fits-different-build.log` |
+| in-game, package | leased `tools/e2e.sh` on the launcher build | **PASS** + `EXIT:0` — `e2e-worldreader.log` |
+| in-game, control | same script, `GAME=$CONTROL_GAME` (no package) | **FAIL** `no /integrateddynamics info reply` + `EXIT:1` — `e2e-worldreader-control.log` |
+| in-game, selftest | `SELFTEST=1` (phase H demands 14) | **FAIL** `the cable's value is 15, expected 14` + `EXIT:1` — `e2e-worldreader-selftest.log` |
+| e2e log gate | `check-e2e-logs.py integrateddynamics-e2e --strict` | `logs=5 ok=5 missing-exit=0 bad-exit=0`, exit 0 |
+| skills gate | `check-skills.py --notes ports/integrateddynamics --strict` | PASS |
+
+**Deliverable:** `ports/integrateddynamics/integrateddynamics.hmod` — **46,457 B**,
+SHA-256 `cad631ca4d603c163bd13d2bcbb8618f85170979942202206ed06ddcac4b9262`,
+**46 entries**, no `Cargo.lock`.
+
+---
+
+> **Historical below: 0.1.0 (`.hnmod`).** It records the retired container's ladder
+> at pin `1d63e0a5…`. The SDK packages (0.2.0 at `0b14f8a`, 0.2.2 at `0a875da`) are
+> verified above and in [`notes.md`](notes.md) §Verification; the commands below no
+> longer exist (`tools/horizon.py`, `tools/package.sh`), and the artifacts they list
+> are kept under
+> `ports/_shared/evidence/integrateddynamics/retired-hnmod-0.1.0/`.
 
 Pin **`1d63e0a5a37a7a708eb0b32b49bf0dfeb28ed8a9`**, mixins
 **`5a64af938ec86b00d53d16a408aabc0038fb3e57`** (schema 6). Everything ran

@@ -35,7 +35,8 @@
       "values": [
         "none",
         "reader",
-        "writer"
+        "writer",
+        "world_reader"
       ]
     },
     "part_east": {
@@ -43,7 +44,8 @@
       "values": [
         "none",
         "reader",
-        "writer"
+        "writer",
+        "world_reader"
       ]
     },
     "part_north": {
@@ -51,7 +53,8 @@
       "values": [
         "none",
         "reader",
-        "writer"
+        "writer",
+        "world_reader"
       ]
     },
     "part_south": {
@@ -59,7 +62,8 @@
       "values": [
         "none",
         "reader",
-        "writer"
+        "writer",
+        "world_reader"
       ]
     },
     "part_up": {
@@ -67,7 +71,8 @@
       "values": [
         "none",
         "reader",
-        "writer"
+        "writer",
+        "world_reader"
       ]
     },
     "part_west": {
@@ -75,7 +80,8 @@
       "values": [
         "none",
         "reader",
-        "writer"
+        "writer",
+        "world_reader"
       ]
     },
     "status": {

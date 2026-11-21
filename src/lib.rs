@@ -7,11 +7,12 @@
 //! (so the model can show them and they persist without a block-entity write),
 //! keeps the network channel value in the cable's saved compound, and after the
 //! level's tick recomputes every connected network from the cables that ticked
-//! this tick: the channel is the strongest Redstone Reader input, and every
-//! Redstone Writer on the network emits it from its own face.
+//! this tick: the channel is the strongest reader input (a Redstone Reader's
+//! signal or a World Reader's light/weather/day aspect), and every Redstone
+//! Writer on the network emits it from its own face.
 //!
 //! The rules live in [`runtime`], which has no game access and is unit-tested on
-//! its own. This file is the one `impl Hooks` plus the cable's Parts; the game
+//! its own. This file is the one `impl Hooks` plus the cable's part slots; the game
 //! calls them only for the cable block, and each is a thin call into [`support`].
 pub mod runtime;
 mod support;
@@ -19,10 +20,11 @@ mod support;
 use std::sync::Arc;
 
 use mod_api::{
-    self, BlockEntityEvent, BlockEntityPart, BlockEntityTickEvent, BlockEntityTicksEvent,
-    BlockPart, BlockSignalEvent, Flow, Hooks, Host, HostSide, IsSignalSourceEvent, LevelHost,
-    LevelTickPostEvent, LevelUnloadEvent, RegisterCommandsEvent, Registrar, RegistrationContext,
-    RunModCommandEvent, ServerHost, UseItemOnEvent,
+    self, BlockChangedEvent, BlockEntityEvent, BlockEntityPart, BlockEntityTickEvent,
+    BlockEntityTicksEvent, BlockPart, BlockSignalEvent, ChunkUnloadEvent, Flow, Hooks, Host,
+    HostSide, IsSignalSourceEvent, LevelHost, LevelTickPostEvent, LevelUnloadEvent,
+    RegisterCommandsEvent, Registrar, RegistrationContext, RunModCommandEvent, ServerHost,
+    UseItemOnEvent,
 };
 
 /// The Logic Cable block (and its item).
@@ -33,6 +35,9 @@ pub(crate) const READER: &str = "integrateddynamics:part_redstone_reader";
 
 /// The Redstone Writer part item.
 pub(crate) const WRITER: &str = "integrateddynamics:part_redstone_writer";
+
+/// The World Reader part item.
+pub(crate) const WORLD_READER: &str = "integrateddynamics:part_world_reader";
 
 /// The one Part attached to the Logic Cable: its block behaviours (the signal it
 /// gives, whether it is a source, the part items clicked onto a face) and its
@@ -61,8 +66,14 @@ impl BlockPart for Cable {
     }
 }
 
+/// The cable's block-entity Part (the saved channel value and the tick that queues its network).
+struct CableEntity;
+
 #[mod_api::horizon_part]
-impl BlockEntityPart for Cable {
+impl BlockPart for CableEntity {}
+
+#[mod_api::horizon_part]
+impl BlockEntityPart for CableEntity {
     fn block_entity(
         &self,
         level: mod_api::LevelSide,
@@ -94,7 +105,10 @@ impl Hooks for Mod {
         let cable = r.block_key(CABLE);
         r.attach_block_part(cable, "cable", Arc::new(Cable));
         let kind = r.declare_block_entity_type("cable", vec![CABLE.to_owned()]);
-        if let Err(error) = r.attach_block_entity_part(&kind, "cable", Arc::new(Cable)) {
+        // A separate type from the block Part: the engine refuses one part type attached to a
+        // block id twice, and a block-entity part registers against its block.
+        if let Err(error) = r.attach_block_entity_part(&kind, "cable_entity", Arc::new(CableEntity))
+        {
             support::warn_refused(error);
         }
     }
@@ -105,6 +119,17 @@ impl Hooks for Mod {
         if let HostSide::Server(host) = host {
             support::on_level_tick_post(host, event.level);
         }
+    }
+
+    /// A cable was replaced: its cached channel value goes with it (the map used to keep every
+    /// ticked position until the level unloaded).
+    fn block_changed(&self, level: &dyn LevelHost, event: &mut BlockChangedEvent) {
+        support::on_block_changed(level, event);
+    }
+
+    /// A chunk unloaded: cables in it are no longer in service, so their cached values go too.
+    fn chunk_unload(&self, _host: &mut dyn ServerHost, event: &mut ChunkUnloadEvent<'_>) {
+        support::on_chunk_unload(event.dimension, event.chunk);
     }
 
     /// A level closed: forget what was kept for it.

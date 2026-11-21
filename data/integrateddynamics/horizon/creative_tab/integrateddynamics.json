@@ -4,6 +4,7 @@
     "integrateddynamics:cable",
     "integrateddynamics:part_redstone_reader",
     "integrateddynamics:part_redstone_writer",
+    "integrateddynamics:part_world_reader",
     "integrateddynamics:crystalized_menril_chunk"
   ],
   "title": "Integrated Dynamics"

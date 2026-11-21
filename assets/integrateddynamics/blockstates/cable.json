@@ -16,6 +16,15 @@
     },
     {
       "apply": {
+        "model": "integrateddynamics:block/part_world_reader",
+        "x": 270
+      },
+      "when": {
+        "part_down": "world_reader"
+      }
+    },
+    {
+      "apply": {
         "model": "integrateddynamics:block/part_redstone_writer_inactive",
         "x": 270
       },
@@ -41,6 +50,15 @@
       },
       "when": {
         "part_up": "reader"
+      }
+    },
+    {
+      "apply": {
+        "model": "integrateddynamics:block/part_world_reader",
+        "x": 90
+      },
+      "when": {
+        "part_up": "world_reader"
       }
     },
     {
@@ -74,6 +92,15 @@
     },
     {
       "apply": {
+        "model": "integrateddynamics:block/part_world_reader",
+        "y": 180
+      },
+      "when": {
+        "part_north": "world_reader"
+      }
+    },
+    {
+      "apply": {
         "model": "integrateddynamics:block/part_redstone_writer_inactive",
         "y": 180
       },
@@ -98,6 +125,14 @@
       },
       "when": {
         "part_south": "reader"
+      }
+    },
+    {
+      "apply": {
+        "model": "integrateddynamics:block/part_world_reader"
+      },
+      "when": {
+        "part_south": "world_reader"
       }
     },
     {
@@ -129,6 +164,15 @@
     },
     {
       "apply": {
+        "model": "integrateddynamics:block/part_world_reader",
+        "y": 90
+      },
+      "when": {
+        "part_west": "world_reader"
+      }
+    },
+    {
+      "apply": {
         "model": "integrateddynamics:block/part_redstone_writer_inactive",
         "y": 90
       },
@@ -154,6 +198,15 @@
       },
       "when": {
         "part_east": "reader"
+      }
+    },
+    {
+      "apply": {
+        "model": "integrateddynamics:block/part_world_reader",
+        "y": 270
+      },
+      "when": {
+        "part_east": "world_reader"
       }
     },
     {

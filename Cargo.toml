@@ -7,10 +7,10 @@
 #
 # Cargo's name and version are not the mod's identity: horizon-mod.toml is.
 name = "integrateddynamics"
-version = "0.2.0"
+version = "0.2.2"
 edition = "2024"
 license = "MIT"
-description = "Integrated Dynamics for Horizon: a Logic Cable network carrying a redstone channel"
+description = "Integrated Dynamics for Horizon: a Logic Cable network carrying redstone and world-reader channels"
 publish = false
 
 [dependencies]

@@ -31,6 +31,9 @@ pub enum Part {
     Reader,
     /// A Redstone Writer: emits the channel's level on this face.
     Writer,
+    /// A World Reader: samples a world property (light, weather, the day cycle)
+    /// of the block on its face into the channel.
+    WorldReader,
 }
 
 impl Part {
@@ -40,6 +43,7 @@ impl Part {
             "none" => Some(Part::None),
             "reader" => Some(Part::Reader),
             "writer" => Some(Part::Writer),
+            "world_reader" => Some(Part::WorldReader),
             _ => None,
         }
     }
@@ -50,6 +54,7 @@ impl Part {
             Part::None => "none",
             Part::Reader => "reader",
             Part::Writer => "writer",
+            Part::WorldReader => "world_reader",
         }
     }
 }
@@ -73,13 +78,18 @@ impl Status {
 }
 
 /// The six part slots of one cable, in [`FACE_NAMES`] order.
+///
+/// Named `PartSlots`, not `Parts`: the SDK has its own (`Parts`, the attached
+/// parts by target id) and `horizon-mod fits` resolves a source type name against
+/// the SDK's surface, so the older name reported a false "no longer builds with a
+/// literal" against every other Nightly.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct Parts([Part; FACE_COUNT]);
+pub struct PartSlots([Part; FACE_COUNT]);
 
-impl Parts {
+impl PartSlots {
     /// No parts on any face.
-    pub fn new() -> Parts {
-        Parts::default()
+    pub fn new() -> PartSlots {
+        PartSlots::default()
     }
 
     /// The part on `face`, or `None` for an out-of-range face.
@@ -88,17 +98,23 @@ impl Parts {
     }
 
     /// The same cable with `part` on `face` (out-of-range faces are ignored).
-    pub fn with(self, face: usize, part: Part) -> Parts {
+    pub fn with(self, face: usize, part: Part) -> PartSlots {
         let mut slots = self.0;
         if let Some(slot) = slots.get_mut(face) {
             *slot = part;
         }
-        Parts(slots)
+        PartSlots(slots)
     }
 
     /// Whether any face carries a writer (the cable is then a signal source).
     pub fn has_writer(self) -> bool {
         self.0.contains(&Part::Writer)
+    }
+
+    /// Whether any face carries a part at all (as upstream's multipart container
+    /// answers `hasParts`), whatever the part reads or writes.
+    pub fn has_part(self) -> bool {
+        self.0.iter().any(|part| *part != Part::None)
     }
 
     /// The faces carrying a reader, in face order.
@@ -108,6 +124,108 @@ impl Parts {
             .enumerate()
             .filter(|(_, part)| **part == Part::Reader)
             .map(|(face, _)| face)
+    }
+
+    /// The faces carrying a world reader, in face order.
+    pub fn world_reader_faces(&self) -> impl Iterator<Item = usize> {
+        self.0
+            .iter()
+            .enumerate()
+            .filter(|(_, part)| **part == Part::WorldReader)
+            .map(|(face, _)| face)
+    }
+}
+
+/// A World Reader aspect: the part of upstream's `Aspects.Read.World` whose value
+/// fits the network's redstone channel (a boolean as 0/15, the light level as
+/// 0..15). The eight aspects that carry an arbitrary integer, a long, a double, a
+/// string or a list (`raincountdown`, `ticktime`, `daytime`, `tps`, `time`,
+/// `totaltime`, `name`, `players`) need the variable system's typed values.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum WorldAspect {
+    /// `read.integer.world.lightlevel`: the target block's brightest local light.
+    Light,
+    /// `read.boolean.world.weather.clear`: the level is not raining.
+    WeatherClear,
+    /// `read.boolean.world.weather.raining`: the level is raining.
+    WeatherRaining,
+    /// `read.boolean.world.weather.thunder`: the level is thundering.
+    WeatherThunder,
+    /// `read.boolean.world.isday`: vanilla's `Level.isDay`.
+    IsDay,
+    /// `read.boolean.world.isnight`: the inverse of `Level.isDay`.
+    IsNight,
+}
+
+impl WorldAspect {
+    /// Every aspect this slice carries, in the order `info` lists them.
+    pub const ALL: [WorldAspect; 6] = [
+        WorldAspect::Light,
+        WorldAspect::WeatherClear,
+        WorldAspect::WeatherRaining,
+        WorldAspect::WeatherThunder,
+        WorldAspect::IsDay,
+        WorldAspect::IsNight,
+    ];
+
+    /// The aspect a saved aspect name selects; `None` for a name this slice does
+    /// not carry (including `none`, a face that never had one chosen).
+    pub fn from_name(name: &str) -> Option<WorldAspect> {
+        match name {
+            "light" => Some(WorldAspect::Light),
+            "weather_clear" => Some(WorldAspect::WeatherClear),
+            "weather_raining" => Some(WorldAspect::WeatherRaining),
+            "weather_thunder" => Some(WorldAspect::WeatherThunder),
+            "isday" => Some(WorldAspect::IsDay),
+            "isnight" => Some(WorldAspect::IsNight),
+            _ => None,
+        }
+    }
+
+    /// The saved name of this aspect (the cable's `aspect_<face>` value).
+    pub fn name(self) -> &'static str {
+        match self {
+            WorldAspect::Light => "light",
+            WorldAspect::WeatherClear => "weather_clear",
+            WorldAspect::WeatherRaining => "weather_raining",
+            WorldAspect::WeatherThunder => "weather_thunder",
+            WorldAspect::IsDay => "isday",
+            WorldAspect::IsNight => "isnight",
+        }
+    }
+}
+
+/// What a World Reader samples from the level once per level tick: the world
+/// facts its aspects read. The support module fills it from the level; the rules
+/// here stay free of game access.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct WorldView {
+    /// The brightest local light at the block the reader faces, 0 to 15.
+    pub light: u8,
+    /// Whether the level is raining (`Level.isRaining`).
+    pub raining: bool,
+    /// Whether the level is thundering (`Level.isThundering`).
+    pub thundering: bool,
+    /// Whether it is day (`Level.isDay`: no fixed time and sky darkening below 4).
+    pub day: bool,
+}
+
+/// A redstone level for a boolean reading: 15 for true, 0 for false, which is
+/// upstream's boolean-to-redstone conversion when a boolean feeds a writer.
+const BOOLEAN_LEVEL: u8 = 15;
+
+/// The redstone level a World Reader aspect reads from `view`.
+pub fn world_reading(aspect: WorldAspect, view: WorldView) -> u8 {
+    fn level(on: bool) -> u8 {
+        if on { BOOLEAN_LEVEL } else { 0 }
+    }
+    match aspect {
+        WorldAspect::Light => view.light.min(15),
+        WorldAspect::WeatherClear => level(!view.raining),
+        WorldAspect::WeatherRaining => level(view.raining),
+        WorldAspect::WeatherThunder => level(view.thundering),
+        WorldAspect::IsDay => level(view.day),
+        WorldAspect::IsNight => level(!view.day),
     }
 }
 
@@ -190,7 +308,7 @@ pub fn channel_value(readings: &[i32]) -> u8 {
 /// The weak redstone signal the cable gives on `face`: the channel value on a
 /// writer face, zero everywhere else. Upstream's writer aspect is weak by
 /// default (`direct = false`); a strong answer is not carried in this slice.
-pub fn signal_for_face(parts: Parts, value: u8, face: usize, direct: bool) -> i32 {
+pub fn signal_for_face(parts: PartSlots, value: u8, face: usize, direct: bool) -> i32 {
     if direct {
         return 0;
     }
@@ -201,16 +319,15 @@ pub fn signal_for_face(parts: Parts, value: u8, face: usize, direct: bool) -> i3
 }
 
 /// Whether the cable is a redstone signal source at all (it has a writer).
-pub fn is_signal_source(parts: Parts) -> bool {
+pub fn is_signal_source(parts: PartSlots) -> bool {
     parts.has_writer()
 }
 
 /// The cable's part status: a cable with a part (reader or writer) is active
 /// while the network carries a non-zero value, as upstream's bound part is
 /// active while its aspect reads or writes.
-pub fn status_for(parts: Parts, value: u8) -> Status {
-    let has_part = parts.has_writer() || parts.reader_faces().next().is_some();
-    if has_part && value > 0 {
+pub fn status_for(parts: PartSlots, value: u8) -> Status {
+    if parts.has_part() && value > 0 {
         Status::Active
     } else {
         Status::Inactive
@@ -230,6 +347,100 @@ mod tests {
     }
 
     #[test]
+    fn a_world_reader_is_a_known_part() {
+        // Upstream's `PartTypeWorldReader` is placed like any other part item; the cable's
+        // state table must name it, or `/setblock` and the item click cannot place one.
+        assert!(
+            Part::from_name("world_reader").is_some(),
+            "the cable's state must accept a world reader"
+        );
+    }
+
+    #[test]
+    fn a_world_reader_keeps_its_cable_active() {
+        // `status_for` counts a writer or a redstone reader as "has a part". A world reader is
+        // a part too: upstream's `PartStateWriterBase` shows active while its aspect reads.
+        assert_eq!(
+            status_for(PartSlots::new().with(2, Part::WorldReader), 12),
+            Status::Active,
+            "a cable carrying only a world reader still has a part"
+        );
+    }
+
+    #[test]
+    fn the_six_world_aspects_round_trip_their_names() {
+        let names: Vec<&str> = WorldAspect::ALL
+            .iter()
+            .map(|aspect| aspect.name())
+            .collect();
+        assert_eq!(
+            names,
+            vec![
+                "light",
+                "weather_clear",
+                "weather_raining",
+                "weather_thunder",
+                "isday",
+                "isnight"
+            ]
+        );
+        for aspect in WorldAspect::ALL {
+            assert_eq!(WorldAspect::from_name(aspect.name()), Some(aspect));
+        }
+        // The aspects that need the typed value layer do not parse here.
+        assert_eq!(WorldAspect::from_name("players"), None);
+        assert_eq!(WorldAspect::from_name("none"), None);
+    }
+
+    #[test]
+    fn a_world_reading_is_the_aspects_redstone_level() {
+        let rainy_night = WorldView {
+            light: 9,
+            raining: true,
+            thundering: false,
+            day: false,
+        };
+        assert_eq!(world_reading(WorldAspect::Light, rainy_night), 9);
+        assert_eq!(world_reading(WorldAspect::WeatherRaining, rainy_night), 15);
+        assert_eq!(world_reading(WorldAspect::WeatherClear, rainy_night), 0);
+        assert_eq!(world_reading(WorldAspect::WeatherThunder, rainy_night), 0);
+        assert_eq!(world_reading(WorldAspect::IsDay, rainy_night), 0);
+        assert_eq!(world_reading(WorldAspect::IsNight, rainy_night), 15);
+
+        let clear_day = WorldView {
+            light: 15,
+            raining: false,
+            thundering: false,
+            day: true,
+        };
+        assert_eq!(world_reading(WorldAspect::WeatherClear, clear_day), 15);
+        assert_eq!(world_reading(WorldAspect::WeatherRaining, clear_day), 0);
+        assert_eq!(world_reading(WorldAspect::IsDay, clear_day), 15);
+        assert_eq!(world_reading(WorldAspect::IsNight, clear_day), 0);
+
+        // A storm is its own reading; vanilla sets rain with it, and the aspects
+        // report each property independently as upstream's `isRaining`/`isThundering` do.
+        let storm = WorldView {
+            light: 0,
+            raining: true,
+            thundering: true,
+            day: true,
+        };
+        assert_eq!(world_reading(WorldAspect::WeatherThunder, storm), 15);
+        // A stored light above 15 (impossible from the level query) still clamps.
+        assert_eq!(
+            world_reading(
+                WorldAspect::Light,
+                WorldView {
+                    light: 20,
+                    ..clear_day
+                }
+            ),
+            15
+        );
+    }
+
+    #[test]
     fn faces_are_the_engine_direction_order() {
         assert_eq!(FACE_NAMES, ["down", "up", "north", "south", "west", "east"]);
         assert_eq!(face_normal(0), [0, -1, 0]);
@@ -246,7 +457,7 @@ mod tests {
 
     #[test]
     fn a_part_is_placed_on_one_face_only() {
-        let parts = Parts::new().with(5, Part::Reader).with(3, Part::Writer);
+        let parts = PartSlots::new().with(5, Part::Reader).with(3, Part::Writer);
         assert_eq!(parts.get(5), Some(Part::Reader));
         assert_eq!(parts.get(3), Some(Part::Writer));
         assert_eq!(parts.get(0), Some(Part::None));
@@ -260,18 +471,28 @@ mod tests {
 
     #[test]
     fn writer_faces_are_listed_in_face_order() {
-        let parts = Parts::new()
+        let parts = PartSlots::new()
             .with(5, Part::Writer)
             .with(1, Part::Reader)
             .with(2, Part::Writer);
         assert_eq!(parts.reader_faces().collect::<Vec<_>>(), vec![1]);
         assert!(parts.has_writer());
-        assert!(!Parts::new().with(2, Part::Reader).has_writer());
+        assert!(!PartSlots::new().with(2, Part::Reader).has_writer());
+        // The world readers are listed on their own: the redstone read path must not
+        // sample a world reader's face, and the world path must find only its own.
+        let mixed = PartSlots::new()
+            .with(0, Part::WorldReader)
+            .with(3, Part::Reader)
+            .with(4, Part::WorldReader);
+        assert_eq!(mixed.world_reader_faces().collect::<Vec<_>>(), vec![0, 4]);
+        assert_eq!(mixed.reader_faces().collect::<Vec<_>>(), vec![3]);
+        assert!(mixed.has_part());
+        assert!(PartSlots::new().with(0, Part::WorldReader).has_part());
     }
 
     #[test]
     fn a_writer_emits_the_channel_on_its_own_face_only() {
-        let parts = Parts::new().with(3, Part::Writer).with(4, Part::Reader);
+        let parts = PartSlots::new().with(3, Part::Writer).with(4, Part::Reader);
         assert_eq!(signal_for_face(parts, 7, 3, false), 7);
         // A reader face gives nothing.
         assert_eq!(signal_for_face(parts, 7, 4, false), 0);
@@ -286,9 +507,9 @@ mod tests {
 
     #[test]
     fn only_a_cable_with_a_writer_is_a_signal_source() {
-        assert!(is_signal_source(Parts::new().with(0, Part::Writer)));
-        assert!(!is_signal_source(Parts::new().with(0, Part::Reader)));
-        assert!(!is_signal_source(Parts::new()));
+        assert!(is_signal_source(PartSlots::new().with(0, Part::Writer)));
+        assert!(!is_signal_source(PartSlots::new().with(0, Part::Reader)));
+        assert!(!is_signal_source(PartSlots::new()));
     }
 
     #[test]
@@ -303,15 +524,15 @@ mod tests {
 
     #[test]
     fn the_status_follows_the_writer_and_its_value() {
-        let writer = Parts::new().with(2, Part::Writer);
+        let writer = PartSlots::new().with(2, Part::Writer);
         assert_eq!(status_for(writer, 0), Status::Inactive);
         assert_eq!(status_for(writer, 1), Status::Active);
         // A reader-only cable is active while it reads a value.
-        let reader = Parts::new().with(2, Part::Reader);
+        let reader = PartSlots::new().with(2, Part::Reader);
         assert_eq!(status_for(reader, 12), Status::Active);
         assert_eq!(status_for(reader, 0), Status::Inactive);
         // A cable with no part is never active.
-        assert_eq!(status_for(Parts::new(), 12), Status::Inactive);
+        assert_eq!(status_for(PartSlots::new(), 12), Status::Inactive);
     }
 
     #[test]

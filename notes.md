@@ -1,4 +1,4 @@
-# Integrated Dynamics → Horizon (slice 1)
+# Integrated Dynamics → Horizon (slices 1–2)
 
 Port of **Integrated Dynamics 1.38.2** (`CyclopsMC/IntegratedDynamics`, **MIT**
 per the jar's `META-INF/neoforge.mods.toml`), Minecraft 1.21.1 NeoForge, from
@@ -10,13 +10,12 @@ Provenance, the jar inventory and the upstream behaviour:
 [`FINDINGS.md`](FINDINGS.md). The jar is kept at
 `ports/_shared/carry-work/integrateddynamics/`.
 
-**Package version 0.2.0** — the SDK repackage of 0.1.0, which was submitted as
-PR **#852** and closed in Horizon's format purge. `src/runtime.rs` is
-**byte-identical** to the pre-migration `mixins/integrateddynamics/runtime.rs`
-(sha256 `91de3aa07721f843a962d1f1c3271dc59d79cccd7437899b3291302fd4bdd692`,
-`cmp` clean, and the same bytes inside the built package). The glue, the
-manifest and the packaging are new; [the migration section](#migration-to-the-sdk-format)
-is the recipe.
+**Package version 0.2.2** — slice 2 (the World Reader) on the **migrated pin
+`0a875da91dbb0fdcb7ba8c42c11341aa229af51a`** + horizon-mixins
+`e59da9094f0c2fdda6c627fe9eff22dec6a906f0` (the 2026-11-21 campaign pin; 0.2.0/0.2.1 were
+built at `0b14f8a`). `src/runtime.rs` grew by slice 2's pure rules; it is no longer
+byte-identical to the retired 0.1.0 copy — that byte-identity was the migration's gate, and
+a new slice is the recorded reason to extend it ([slice 2](#slice-2-the-world-reader)).
 
 **Class + tier:** `content` / **`deep`** (ledger row; provenance
 `ports/_shared/source-map/atm10-sources.csv`). Approach per Horizon's
@@ -115,8 +114,9 @@ of it; what it would have provided and how the slice avoids it:
 
 1. the **variable system**: variable store, logic programmer, materializer,
    proxy, delay, variable cards/transformers — the whole typed value layer;
-2. every other part (inventory/fluid/energy/entity/machine/world/audio/
-   network/effect/panel/connector) and the **facade**/fake-cable placement;
+2. the remaining parts (inventory/fluid/energy/entity/machine/audio/
+   network/effect/panel/connector) and the **facade**/fake-cable placement —
+   the World Reader shipped in slice 2, the other reader/writer families stand;
 3. the **screens** (part settings, writer aspect card slot, display panel);
 4. **energy consumption** of parts and the network's power (upstream's
    `getConsumptionRate`);
@@ -127,7 +127,116 @@ of it; what it would have provided and how the slice avoids it:
 8. per-face channels (upstream one variable per reader) — this slice is one
    channel per network, the maximum reading.
 
-Skills: superpowers/using-superpowers,brainstorming,writing-plans,systematic-debugging,test-driven-development,verification-before-completion; BeautifulRust/rust-best-practices,rust-port
+## Slice 2: the World Reader
+
+**Chosen from** the gap list's item 2 ("every other part … and the facade/fake-cable
+placement"): the **World Reader** (`upstream PartTypeWorldReader` +
+`Aspects.Read.World`) is the reader family whose aspects fit the network's integer
+redstone channel exactly, so it adds a real family without pulling in the typed
+value layer. It is a `deep`-shaped job in the port's own sense — the cable's block
+entity holds a part that reads world state the server alone knows — not a
+`machines`/`data` job.
+
+### What the slice does
+
+- **`integrateddynamics:part_world_reader`** item and part value
+  (`part_<face>=world_reader` on the cable, six multipart models carried from the
+  jar with `part/world_reader_back.png` / `front.png`).
+- **Aspect** per World Reader face, saved in the cable's block entity as
+  `aspect_<face>` (the part screen that selects one is gap 3, so a placed part
+  starts at `light`; `/integrateddynamics aspect <pos> <face> <aspect>` selects
+  another, operator-only like the `part` command).
+- **The six aspects whose value fits the channel** (upstream's 14 trimmed to the
+  ones a redstone level can carry):
+
+  | aspect | reading | upstream |
+  |---|---|---|
+  | `light` | `getMaxLocalRawBrightness(target)` = max(block light, sky light − sky darkening) | `read.integer.world.lightlevel` |
+  | `weather_clear` | 15 when not raining | `read.boolean.world.weather.clear` |
+  | `weather_raining` | 15 when raining | `read.boolean.world.weather.raining` |
+  | `weather_thunder` | 15 when thundering | `read.boolean.world.weather.thunder` |
+  | `isday` | 15 when `!hasFixedTime && skyDarken < 4` (vanilla `Level.isDay`) | `read.boolean.world.isday` |
+  | `isnight` | 15 when the inverse | `read.boolean.world.isnight` |
+
+- **Same channel rule as slice 1**: every reader on the connected network
+  contributes a reading, the channel is the strongest, and every Redstone Writer
+  on that network emits it from its own face.
+- **Readout**: `/integrateddynamics info` gained an `aspects up=light,…` line,
+  and `/integrateddynamics aspect` reports `World Reader at x,y,z (face): aspect
+  name`; an unknown aspect and a face without a World Reader are refused with
+  their own replies.
+
+### Deliberate deviations
+
+| Upstream | Here | Why |
+|---|---|---|
+| The aspect is picked in the part screen with a variable card | saved `aspect_<face>` name set by the operator command; a placed part defaults to `light` | the part screen is gap 3; a default keeps the item usable without it |
+| The reader's value is the bound aspect's typed value | the six aspects that are a boolean or 0..15 integer, mapped to a redstone level (boolean → 15/0, upstream's own boolean-to-redstone rule) | one integer channel per network (slice 1); the other eight World aspects need the typed value layer (gap 1) |
+| `isRaining`/`isThundering` are level properties | `LevelRef::is_raining` / `is_thundering` | the pin's per-level reads |
+| `getMaxLocalRawBrightness` includes a per-position sky darkening | `brightness(Block)` vs `brightness(Sky) − get_sky_darken()` | the same vanilla formula; the pin has no single combined read on `LevelRef` |
+| World Reader aspects are active only with a card | active while the channel is > 0, like slice 1's parts | no card layer in this slice |
+
+### Coverage (ruling 2026-11-20)
+
+| family in the jar | state | where |
+|---|---|---|
+| `part_world_reader` item + part placement | **tested** | e2e phase O (right-click places it, `info` reports `west=world_reader`); the control leg refuses the id |
+| aspect `light` | **tested** | e2e H (glowstone 15) / I (stone 0) — the differential |
+| aspect `weather_raining` | **tested** | e2e J (clear 0, rain 15) |
+| aspect `weather_clear` | **tested** | e2e K (clear 15, rain 0) |
+| aspect `weather_thunder` | **tested** | e2e L (thunder 15, clear 0) |
+| aspect `isday` | **tested** | e2e M (noon 15, midnight 0) |
+| aspect `isnight` | **tested** | e2e N (midnight 15, noon 0) |
+| `/integrateddynamics aspect` | **tested** | every aspect call's reply; phase P refuses an unknown aspect and a face with no World Reader |
+| `/integrateddynamics info` aspects line | **tested** | e2e H/O (`expect_aspect`, parsed reply) |
+| the other eight World aspects (`raincountdown`, `ticktime`, `daytime`, `tps`, `time`, `totaltime`, `name`, `players`) | **not ported** | they need the variable system's typed values (gap 1) |
+| the World Reader part recipe | **not carried** | like the redstone parts, it needs `variable_transformer_input/output` (gap 1); nothing to craft |
+| the part screen (aspect selection) | **not ported** | gap 3; the operator command stands in |
+
+### Red → green (slice 2, TDD)
+
+1. **Red** `runtime::tests::a_world_reader_is_a_known_part` — the state table did
+   not accept the value:
+   `panicked at src/runtime.rs:236:9: the cable's state must accept a world reader`
+   (`test result: FAILED. 20 passed; 1 failed`). **Green**: `Part::WorldReader` +
+   `from_name`/`name`.
+2. **Red** `runtime::tests::a_world_reader_keeps_its_cable_active` —
+   `assertion left == right failed … left: Inactive right: Active`
+   (`test result: FAILED. 21 passed; 1 failed`). **Green**: `PartSlots::has_part`
+   is what `status_for` asks.
+3. **Red** the aspect API did not exist: `error[E0433]: cannot find type
+   `WorldAspect` in this scope`, `error[E0425]: cannot find function
+   `world_reading``, `error[E0422]: cannot find struct … `WorldView``.
+   **Green**: `WorldAspect`, `WorldView`, `world_reading` + their tests.
+4. **Green** 24 tests (20 carried + 4 new), clippy clean, fmt clean, two
+   `cmp`-identical builds.
+
+**`Parts` → `PartSlots`.** `cargo horizon-mod fits --build 0b14f8a` on the 0.2.1
+package reported `does not fit: 1 item changed — the type Parts can no longer be
+built with a literal, and src/runtime.rs:96 builds it`. That is the fits
+heuristic resolving the port's `Parts` against the SDK's own non-constructible
+`Parts` (same hash in every cached build), i.e. a false positive; the rename
+removes it, and 0.2.2 reports `0b14f8a fits`.
+
+## Pin migration to `0a875da` (2026-11-21)
+
+The campaign pin moved from `0b14f8a` to
+**`0a875da91dbb0fdcb7ba8c42c11341aa229af51a`** (Nightly 2026-11-20; mixins
+`e59da909…` unchanged, package format 6, content API 0.2). This package declares
+the new pin, and `cargo horizon-mod` switched `.horizon/sdk/` to
+`0a875da` (`sdk.json` build = the new commit).
+
+- **No source change was needed for the API delta**: the new surface's breaking
+  change is a leading `dimension: &'a str` on `attack_entity`, `entity_interact`
+  and `hanging_break`, none of which this port implements.
+- `fits` direction flipped: `--build 0a875da` prints `made for` (the pin itself,
+  a tautology) and `--build 0b14f8a` prints `fits` — the run that proves the
+  package still compiles against a *different* build.
+- The additive API in the new release (`structures_at`, density functions,
+  `set_velocity`, `reset_goals`, BlockStates properties, `set_display`) was **not**
+  used: it is outside this slice.
+
+
 
 ## Migration to the SDK format
 
@@ -375,32 +484,20 @@ For `integratedtunnels`, `integratedcrafting`, `integratedterminals` and
 4. the `/integrateddynamics …` subcommands and their exact wording (the e2e
    asserts them).
 
-### What still needs an in-game run
+### The in-game run (launcher-built game)
 
-The in-game ladder could **not** run here: a native SDK mod is compiled into the
-game by the **launcher**, and `horizon-launcher` is not installed in this
-environment (`cargo horizon-mod run` answers: *"code mods run through the
-launcher's native build: horizon-launcher native-build . --trust-native-code"*).
-`tools/e2e.sh` is kept unchanged (the assertions are the behaviour's proof) and
-must be run with a launcher-built game before the ledger moves past
-`ported-partial`:
+The migration could not run in game (the launcher was not installed); since
+2026-11-18 `ports/tools/launcher-game.sh` builds a game from the SDK with the mod
+compiled in, so both the block-entity-through-the-declared-type risk above and
+the typed command path are **verified**, not risks: phases A–G pass in the End
+and H–P in the Overworld (see [the in-game ladder](#the-in-game-ladder)).
 
 ```sh
-horizon-launcher native-build ports/integrateddynamics --instance <instance> --trust-native-code
-GAME=<that instance's horizon-client> CTL=ports/_shared/bin/horizon-1d63e0a5/horizon-ctl tools/e2e.sh
+ports/tools/launcher-game.sh build integrateddynamics
+eval "$(ports/tools/launcher-game.sh env integrateddynamics)"
+ports/tools/build-slot.sh run --job W1-integrateddynamics --port ports/integrateddynamics \
+    --step e2e -- bash ports/integrateddynamics/tools/e2e.sh
 ```
-
-Two things that run only prove out there, and are named as risks rather than
-claims:
-
-- the cable gets its block entity from the **declared type** even though its
-  content template is `minecraft:stone` (at the 0.1.0 pin the same
-  hook-declared block entity worked in game; the SDK declares the type instead
-  of answering a hook). If a launcher run shows no block entity, the one-line
-  fix is a block-entity-capable template in
-  `data/integrateddynamics/horizon/block/cable.json`;
-- the e2e's `/integrateddynamics` readout now reaches the **typed** command
-  path; its three usages and the harness phases are unchanged in wording.
 
 ## Upstream defects fixed
 
@@ -410,6 +507,44 @@ the reader is now upstream's own target-face read and the deviation table above
 records the withdrawal. Nothing was copied from a Java defect, and nothing was
 "fixed" that upstream does on purpose.
 
+## Review fixes (2026-11-18)
+
+The registry reviewer's source review of PR #1172 (`var/review-all/1172-integrateddynamics.md`) left
+three findings; all three are fixed in **0.2.1** (`40156 B`, sha256 `d1c04daf2f8e20bc4726f903d9ec60752173e00f24ba4ae9367561b3441e2153`).
+
+- **`src/support.rs:368` — the level-0 `/integrateddynamics part` command changed any loaded cable
+  with no reach, ownership, build permission or part cost.** The command now requires the operator
+  level (2); an ordinary player places parts with the item through `BlockItemPart::use_item_on`,
+  which pays the item and needs reach (that path is unchanged and is what the e2e's step G checks).
+  The harness scenario runs the debug command as an operator (`ctl command "op @a"`), as a server
+  admin would.
+- **`src/support.rs:203` — a capped network walk was repeated for every queued cable of the same
+  oversized network in one tick.** The cap returned a start-dependent subset and only the cells of
+  that subset entered `done`. Every walk's cells (including a capped one's) now enter `done`, and a
+  per-level-tick cell budget (`Budget`, four `MAX_NETWORK` walks) defers the starts that do not fit
+  to the next tick instead of re-walking the giant network. Test:
+  `support::tests::one_level_tick_spends_a_bounded_cell_budget` (all-or-nothing take; the fifth
+  network is deferred).
+- **`src/support.rs:230` — the cached redstone map kept every ticked cable position until the level
+  unloaded, removed cables included.** `Hooks::block_changed` now drops a cable's cached value and
+  queued tick when the cable state is replaced by another block, and `Hooks::chunk_unload` drops
+  every cached position in the unloaded chunk. Tests:
+  `support::tests::a_stored_cable_belongs_to_the_chunk_it_is_in` (floor division, so `-1` is chunk
+  `-1`); the pruning path is exercised in game by the e2e (a cable replaced, a part removed).
+
+**In-game leg:** `ports/tools/launcher-game.sh run integrateddynamics` → `PASS` + `E2E EXIT:0`,
+control (the same Nightly, no package) `FAIL: no /integrateddynamics info reply` + `EXIT:1`,
+recorded in `ports/_shared/evidence/integrateddynamics-e2e/`.
+
+## Migration note: one Part type per block
+
+The engine refuses one part type attached to a block id twice ("… is attached to
+`integrateddynamics:cable` twice"). This package attached `Cable` as both the block Part and the
+block-entity Part, so it crashed at load; the block-entity half is now `CableEntity` (registered as
+`"cable_entity"`). Fixed in 0.2.1 and proven by the in-game leg above.
+
+Skills: superpowers/using-superpowers,brainstorming,writing-plans,systematic-debugging,test-driven-development,verification-before-completion; BeautifulRust/rust-best-practices
+
 ## Verification
 
 Every command ran through `ports/tools/build-slot.sh` with `BUILD_LOCAL=1`,
@@ -418,63 +553,92 @@ Logs: `ports/_shared/evidence/integrateddynamics/`.
 
 | Step | Command | Result |
 |---|---|---|
-| runtime only, **before the glue** | `cargo test` on the crate that had only `pub mod runtime;` | **12 passed**, 0 failed — `sdk-test-runtime-only.log` |
-| runtime byte-identical | `sha256sum` + `cmp` against `mixins/integrateddynamics/runtime.rs` | `91de3aa0…bdd692`, `BYTE-IDENTICAL` |
-| tests (after the glue) | `cargo test` | **18 passed**, 0 failed (12 runtime + 6 state-parser) — `sdk-test.log` |
-| lints | `cargo clippy --all-targets -- -D warnings` | exit 0, **0 warnings** — `sdk-clippy.log` |
-| formatting | `cargo fmt --check` | clean — `sdk-fmt.log` |
-| package | `cargo horizon-mod build` | `target/horizon-mod/integrateddynamics.hmod` — `sdk-build.log` |
-| reproducibility | build twice, `sha256sum` both | **both `4723b651…a7c72`** — `sdk-build-repro.log` |
-| package check | `cargo horizon-mod check integrateddynamics.hmod` | exit 0, verbatim below — `sdk-check.log` |
-| fits | `cargo horizon-mod fits integrateddynamics.hmod --build nightly` | exit 0, `0b14f8a  made for` — `sdk-fits.log` |
-| packaged runtime | `cmp` the zip's `src/runtime.rs` against the retired one | **byte-identical** |
+| **0.2.2 tests** | `cargo test` at `0a875da` | **24 passed**, 0 failed (16 runtime + 8 support) — `sdk-test.log` |
+| **0.2.2 lints** | `cargo clippy --all-targets -- -D warnings` | exit 0, **0 warnings** — `sdk-clippy.log` |
+| **0.2.2 formatting** | `cargo fmt --check` | clean — `sdk-fmt.log` |
+| **0.2.2 reproducibility** | `rm -f Cargo.lock` before each build, `cmp` both | **byte-identical** (`aba56130…b726d72f`) — `/tmp/opencode/id-0.2.2-a.hmod` vs `target/` |
+| **0.2.2 package check** | `cargo horizon-mod check integrateddynamics.hmod` | exit 0, verbatim below — `sdk-check.log` |
+| **0.2.2 fits, the pin** | `cargo horizon-mod fits … --build 0a875da` | `0a875da  made for` — `sdk-fits.log` |
+| **0.2.2 fits, a different build** | `cargo horizon-mod fits … --build 0b14f8a` | `0b14f8a  fits` — `sdk-fits-different-build.log` |
+| runtime only, **before the glue** (migration) | `cargo test` on the crate that had only `pub mod runtime;` | **12 passed**, 0 failed — `sdk-test-runtime-only.log` |
+| runtime byte-identical (migration gate, 0.2.0) | `sha256sum` + `cmp` against `mixins/integrateddynamics/runtime.rs` | `91de3aa0…bdd692`, `BYTE-IDENTICAL` |
+| tests at 0.2.0 | `cargo test` | **18 passed**, 0 failed (12 runtime + 6 state-parser) — `sdk-test.log` (0.2.0 run) |
+| package at 0.2.0 | `cargo horizon-mod build` | `target/horizon-mod/integrateddynamics.hmod` — `sdk-build.log` |
+| reproducibility at 0.2.0 | build twice, `sha256sum` both | **both `4723b651…a7c72`** — `sdk-build-repro.log` |
+| fits at 0.2.0 | `cargo horizon-mod fits … --build nightly` | exit 0, `0b14f8a  made for` — `sdk-fits.log` (0.2.0 run) |
 
-`check`, verbatim:
+`check` (0.2.2), verbatim:
 
 ```
-integrateddynamics 0.2.0 (native-mod, format native-1/0b14f8acfd97fa2c750e42795249dcc981178ca4/e59da9094f0c2fdda6c627fe9eff22dec6a906f0, for 26.3)
-  37709 bytes, SHA-256 4723b651f5b77b5fa61af1dc2f93f4a8dab828d3bc74b85f58605c4c3a0a7c72, unsigned
+integrateddynamics 0.2.2 (native-mod, format native-1/0a875da91dbb0fdcb7ba8c42c11341aa229af51a/e59da9094f0c2fdda6c627fe9eff22dec6a906f0, for 26.3)
+  46457 bytes, SHA-256 cad631ca4d603c163bd13d2bcbb8618f85170979942202206ed06ddcac4b9262, unsigned
   native source: unsandboxed; not executed by the registry check. Compile and test against the exact pinned Horizon and Mixins revisions before review.
 ```
 
-`fits`, verbatim:
+`fits`, verbatim (0.2.2):
 
 ```
+$ cargo horizon-mod fits integrateddynamics.hmod --build 0a875da
 Integrated Dynamics:
-0b14f8a  made for
+0a875da  made for
+
+$ cargo horizon-mod fits integrateddynamics.hmod --build 0b14f8a
+Integrated Dynamics:
+0b14f8a  fits
 ```
 
 The 12 runtime tests include the 0.1.0 review repair's two guards
 (`a_sparse_line_keeps_its_whole_cable_budget`, `a_block_that_is_not_a_cable_starts_no_network`),
-so carrying `runtime.rs` byte-identically carries that fix too.
+so the migrated file carried that fix too; slice 2 extends the same module with
+the World Reader's rules (16 runtime tests, 8 support tests).
 
 ### The deliverable (one file)
 
 `ports/integrateddynamics/integrateddynamics.hmod` is **the** deliverable:
 
-- **37,709 B**, SHA-256
-  `4723b651f5b77b5fa61af1dc2f93f4a8dab828d3bc74b85f58605c4c3a0a7c72`,
-  **40 entries**: `horizon-mod.toml`, `Cargo.toml`, `LICENSE`,
-  `LICENSE-NOTICE.md`, `README.md`, `src/lib.rs`, `src/runtime.rs` (byte-identical
-  to 0.1.0's), `src/support.rs`, `uses.json` (329 entries, `made_for 0b14f8a`),
-  and the 31 carried content files under `assets/integrateddynamics/` and `data/`.
+- **46,457 B**, SHA-256
+  `cad631ca4d603c163bd13d2bcbb8618f85170979942202206ed06ddcac4b9262`,
+  **46 entries**: `horizon-mod.toml` (0.2.2), `Cargo.toml`, `LICENSE`,
+  `LICENSE-NOTICE.md`, `README.md`, `src/lib.rs`, `src/runtime.rs`,
+  `src/support.rs`, `uses.json`, and the 36 carried content files under
+  `assets/integrateddynamics/` and `data/` (including the World Reader's item,
+  models, textures and block definition).
 - no `Cargo.lock` inside (a lock would change the sha and pin newer crates than
   the SDK's own).
-- `cargo horizon-mod check` and `fits` accept it at `0b14f8a`.
+- `cargo horizon-mod check` accepts it at `0a875da`, and `fits` accepts it against
+  the different build `0b14f8a`.
 
-### Not run here (honest gap)
+### The in-game ladder
 
-- the in-game e2e (`tools/e2e.sh`) — needs `horizon-launcher`; see
-  [What still needs an in-game run](#what-still-needs-an-in-game-run);
-- therefore `ported-partial` stands: the code builds, the pure and parser tests
-  pass, and the package is registry-valid, but the *behaviour* at this pin is
-  unverified in a world.
+`ports/tools/launcher-game.sh build integrateddynamics` (Nightly `0a875da`,
+launcher 0.2.92) then the three legs, each in a build slot. Logs under
+`ports/_shared/evidence/integrateddynamics-e2e/`:
+
+| Leg | Log | Result |
+|---|---|---|
+| package leg | `e2e-worldreader.log` | **PASS** + `EXIT:0`: A–G (redstone) and H–P (World Reader) |
+| control: the same Nightly **without** the package (`GAME=$CONTROL_GAME`) | `e2e-worldreader-control.log` | **FAIL** `no /integrateddynamics info reply` + `EXIT:1` (the ids and the command are unknown, so the leg is not vacuous) |
+| selftest: `SELFTEST=1` (phase H demands 14; the World Reader gives 15) | `e2e-worldreader-selftest.log` | **FAIL** `H: the cable's value is 15, expected 14` + `EXIT:1` |
+| `check-e2e-logs.py integrateddynamics-e2e --strict` | — | `logs=5 ok=5 missing-exit=0 bad-exit=0`, exit 0 |
+
+Harness facts this leg taught (kept for the next slice):
+
+- `ctl messages` lists chat **newest first**; `grep -m1`/`head -1` is the reply
+  just produced, a `tail -1` picks an older phase's line (the first red here was
+  that bug, not the mod: phase B read phase A's `value 15`).
+- `Level.isRaining` is a smoothed **rain level above 0.2**, and `isThundering` a
+  thunder level above 0.9; `/weather` only sets the target, so the levels move
+  0.01/tick (about 20 and 90 ticks), and the rain/thunder darkening stays in
+  `sky_darken` until they fall (`isday` reads it). The scenario waits 60 ticks
+  after rain and 140 after clear/thunder.
+- The Overworld chamber is roofed so the light aspect has a clean 15→0
+  differential; `difficulty peaceful` keeps the dark chamber empty at midnight.
 
 ## Known gaps
 
-The slice boundary and gaps above stand (variable system, every other part, the
+The slice boundary and gaps above stand (variable system, the remaining parts, the
 machines, the screens, energy, the menril chain beyond the chunk, the multipart
-renderer, per-face channels). Recorded for this migration:
+renderer, per-face channels). Recorded for this migration and slice 2:
 
 - the writer emits **weak** power only (`direct = false`, upstream's aspect
   default); a strong answer is not carried;
@@ -483,19 +647,30 @@ renderer, per-face channels). Recorded for this migration:
 - a cable with no reader or writer still re-evaluates every tick (one integer
   channel per network — the maximum reader level);
 - part placement is `use_item_on` on a cable face with the part item (upstream's
-  screen/card layer is out of slice), and the harness command
-  `/integrateddynamics info|part|probe` stands in for the GUI;
+  screen/card layer is out of slice), and the harness commands
+  `/integrateddynamics info|part|aspect|probe` stand in for the GUI;
+- a World Reader's aspect lives in the cable's saved compound (`aspect_<face>`);
+  a placed part defaults to `light` because the selecting screen is gap 3, and the
+  command is operator-only;
+- the World Reader carries the six aspects that fit a redstone level; the other
+  eight need the typed value layer (gap 1);
 - the channel mirror is per level and dropped on `level_unload`; a cable that
   never ticked answers 0 until its first `level_tick_post`;
-- `/integrateddynamics part` refuses a dimension other than the one in place
-  (the write helpers act there);
-- `src/support.rs` carries 6 tests of the state-string parser; the rest of the
-  glue is exercised only in game (the e2e), which is the gap above.
+- `/integrateddynamics part|aspect` refuse a dimension other than the one in
+  place (the write helpers act there);
+- `src/support.rs` carries 8 tests (the state-string parser, the cell budget, the
+  chunk guard); the rest of the glue is exercised in game (the e2e).
 
 ## Changelog for the resubmission
 
-> Supersedes #852, closed because Horizon retired `.hnmod` (#17992). Changes:
-> flat SDK package with `api = "0.2"` and `[native]` pinned to `0b14f8a`; hooks
-> rewritten as `impl mod_api::Hooks` methods against typed hosts/events (12
-> helpers mapped, 1 recorded as a gap — the embedded-content injection, which the
-> single package makes unnecessary); `runtime.rs` and its tests unchanged.
+> Supersedes #852, closed because Horizon retired `.hnmod` (#17992). Version
+> 0.2.2 (2026-11-21) moves the package to the campaign pin **`0a875da`** (the
+> `fits` run against `0b14f8a` is the different-build proof) and adds **slice 2,
+> the World Reader**: the `part_world_reader` item and part value, its aspect
+> saved per cable face, the six World aspects that fit a redstone level (light,
+> clear/rain/thunder, day/night), and `/integrateddynamics aspect`. The reader's
+> rules are unit-tested (24 tests), the family is proven in game (glowstone 15 →
+> stone 0, weather, day/night, item placement and two refusals), the control leg
+> fails without the package, and `SELFTEST=1` fails at the new phase. The `fits`
+> false positive on the type name `Parts` is gone (renamed `PartSlots`).
+> 0.2.0 was the flat SDK package at `0b14f8a`; 0.2.1 fixed the registry review.

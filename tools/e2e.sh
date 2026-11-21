@@ -1,61 +1,78 @@
 #!/usr/bin/env bash
-# In-game check for Integrated Dynamics slice 1: a Redstone Reader on a Logic
-# Cable reads the redstone level of the block it targets, the connected cable
-# network carries the value, and every Redstone Writer on that network emits it
-# on its own face.
+# In-game check for Integrated Dynamics slice 2: a Redstone Reader on a Logic
+# Cable reads the redstone level of the block it targets, a **World Reader** reads
+# the light level, the weather or the day cycle of the block it targets, the
+# connected cable network carries the strongest reading, and every Redstone Writer
+# on that network emits it on its own face.
 #
-# Every mod command is typed with `ctl chat "/cmd"` because `ctl command` runs
-# the console path and bypasses the native `perform_command` hook.
+# The game is the launcher's native build of this package (the content ships inside
+# the `.hmod`), so no `--dev-mod` is passed; `launcher-game.sh build` exports
+# GAME/CTL/RES. The same Nightly **without** the package (CONTROL_GAME) is the
+# control leg: run this script with `GAME=$CONTROL_GAME` and it must FAIL (the ids
+# and the command are unknown), which is what makes the leg non-vacuous.
 #
-# The End, in the void at x=200 (away from the central island, its dragon egg
+# Every mod command is typed with `ctl chat "/cmd"` because `ctl command` runs the
+# console path and bypasses the native command hook.
+#
+# A–G: the End, in the void at x=200 (away from the central island, its dragon egg
 # and the ambient item entities of a generated level), a stone floor at y=100.
+# H–P: the Overworld, in a roofed stone chamber at x=200/z=200, so the sky light at
+# the test block is 0 and the light aspect has a clean differential.
 #
-# Default run (EMBEDDED=0, the content loaded with `--dev-mod content/`):
 #  A  a reader-fed cable network lights a lamp three cables away: value 15,
 #     lamp lit, cable status active;
 #  B  the same network with its input removed is value 0 and the lamp dark;
 #  B2 a redstone wire line gives an analog level 14 (not just on/off);
 #  C  a redstone torch beside the reader is another 15 source;
 #  D  two writers on one network both light (the value reaches every sink);
-#  E  a disconnected cable with a writer and no reader stays dark (the value is
-#     the network's, not a global);
+#  E  a disconnected cable with a writer and no reader stays dark;
 #  F  removing the reader part drops the channel to 0 and both lamps go dark;
-#  G  right-clicking a cable face with a Redstone Reader places the part
-#     (upstream's `ItemPart.useOn`).
+#  G  right-clicking a cable face with a Redstone Reader places the part;
+#  H  a World Reader's light aspect reads the glowstone above it as 15;
+#  I  the same aspect reads 0 after the glowstone becomes stone (the differential);
+#  J  weather_raining: clear 0, rain 15;
+#  K  weather_clear: clear 15, rain 0;
+#  L  weather_thunder: thunder 15, clear 0;
+#  M  isday: noon 15, midnight 0;
+#  N  isnight: midnight 15, noon 0;
+#  O  right-clicking a cable face with the World Reader item places it (default
+#     aspect light, reported by `info`);
+#  P  an unknown aspect and a face without a World Reader are refused.
 #
-# EMBEDDED=1 launches the same binary with only the native bundle's embedded
-# content (no `--dev-mod`); CONTROL=1 (default with EMBEDDED) first launches it
-# with `.horizon-cache` unusable, where the ids must be unknown.
-#
-# SELFTEST=1 flips phase A's expected value (it must FAIL), proving the
-# scenario can fail.
+# SELFTEST=1 flips phase H's expected light level (the World Reader gives 15, the
+# run demands 14): the new family's assertion must FAIL. SELFTEST=A does the same
+# for phase A's redstone value.
 set -Eeuo pipefail
 export LC_ALL=C
 [ -z "${ID_DEBUG:-}" ] || set -x
 
-EMBEDDED=${EMBEDDED:-0}
-CONTROL=${CONTROL:-$EMBEDDED}
 SELFTEST=${SELFTEST:-0}
 KEEP=${KEEP:-0}
 
 CLONE=/home/adlf/Desktop/all_the_mods_10_rust_rewrite
 PORT=$CLONE/ports/integrateddynamics
-PIN_BIN=$CLONE/ports/_shared/bin/horizon-1d63e0a5
+PIN_BIN=$CLONE/ports/_shared/bin/horizon-0a875da
 CTL=${CTL:-$PIN_BIN/horizon-ctl}
 BIN_ROOT=${HORIZON_TARGET_DIR:-$PORT/target/horizon-cargo}
 GAME=${GAME:-$BIN_ROOT/fast/horizon-client}
 RES=${RES:-${HORIZON_RES:-/home/adlf/Desktop/horizon/.local/horizon-client/26.3}}
 SOCK=${SOCK:-/tmp/opencode/integrateddynamics-e2e.sock}
-WORLD=IntegratedDynamicsE2E
-CONTROL_WORLD=IntegratedDynamicsControl
-# Where the arena stands: the End's void, far from the central island.
+WORLD=${WORLD:-IntegratedDynamicsE2E}
+# Where the End arena stands: the End's void, far from the central island.
 X0=200
 Y=101
+# The Overworld chamber and its rig.
+X1=200
+YW=102
+Z1=200
 EXPECT_A=${EXPECT_A:-15}
-# The selftest asks for a level the reader cannot produce, so phase A must fail.
-if [ "$SELFTEST" = 1 ]; then EXPECT_A=14; fi
+EXPECT_WORLD_LIGHT=${EXPECT_WORLD_LIGHT:-15}
+case "$SELFTEST" in
+    1) EXPECT_WORLD_LIGHT=14 ;;   # the World Reader reads 15; H must fail
+    A|a) EXPECT_A=14 ;;           # the Redstone Reader reads 15; A must fail
+esac
 
-[ -x "$CTL" ] || { echo "missing horizon-ctl: $CTL" >&2; exit 1; }
+[ -x "$CTL" ] || { echo "missing horizon-ctl: $CTL (run launcher-game.sh env <mod>)" >&2; exit 1; }
 [ -x "$GAME" ] || { echo "missing horizon-client: $GAME" >&2; exit 1; }
 [ -d "$RES/assets" ] || { echo "missing prepared resources: $RES" >&2; exit 1; }
 
@@ -65,18 +82,16 @@ export HORIZON_LAUNCHER_HOME=$SCRATCH/launcher
 export XDG_DATA_HOME=$SCRATCH/data
 export XDG_CONFIG_HOME=$SCRATCH/config
 export HORIZON_NO_AUDIO=1
-# The game folder is where the game starts (no `--game-dir` is passed), and the
-# bundle's `content_root` helper writes `<game folder>/.horizon-cache`. `launch`
-# changes into `$SCRATCH`, so that is the folder the control leg must block; if a
-# `--game-dir` is ever added, set GAME_DIR to the same path.
-GAME_DIR=${GAME_DIR:-$SCRATCH}
-CACHE=$GAME_DIR/.horizon-cache
-EMBEDDED_FILE=$CACHE/integrateddynamics-embedded-content.hmod
 mkdir -p "$(dirname "$SOCK")" "$XDG_CONFIG_HOME"
 rm -f "$SOCK"
 
 ctl() { "$CTL" --socket "$SOCK" "$@"; }
 say() { ctl chat "/$1" >/dev/null; }
+# The newest chat line matching a pattern. `ctl messages` lists chat newest
+# first, so `head -1` is the reply the command just produced; a `tail` would pick
+# the oldest match in the window, i.e. setup noise from an earlier phase (the
+# false-proof hazard the parity ruling names).
+newest() { ctl messages 12 | jq -r '.chat[]' | grep -E "$1" | head -1 || true; }
 fail() { echo "FAIL: $*" >&2; ctl logs --lines 60 >&2 || true; exit 1; }
 on_error() { echo "FAIL: line $1: '$2' exited $?" >&2; ctl logs --lines 40 >&2 || true; }
 trap 'on_error "$LINENO" "$BASH_COMMAND"' ERR
@@ -95,20 +110,19 @@ cleanup() {
 }
 trap cleanup EXIT
 
-launch() { # launch [WORLD]
-    local world=${1:-$WORLD}
+launch() {
     rm -f "$SOCK"
     cd "$SCRATCH"
-    local args=(--game "$GAME" --world "$world" --seed 20261105 --creative --headless
-                --wait --resources "$RES")
-    if [ "$EMBEDDED" = 1 ]; then
-        echo "  launch: no --dev-mod; the bundle carries its own content" >&2
-    else
-        args+=(--dev-mod "$PORT/content")
-    fi
-    "$CTL" --socket "$SOCK" launch "${args[@]}" >/dev/null
+    "$CTL" --socket "$SOCK" launch --game "$GAME" --world "$WORLD" --seed 20261105 --creative \
+        --headless --wait --resources "$RES" >/dev/null
     ctl wait-ready 120
     ctl wait 40
+    # `/integrateddynamics part|aspect` are operator-only since 0.2.1: they configure a
+    # cable at any loaded coordinates without its screen or its item, so an ordinary
+    # player uses the part items (the `use_item_on` path phases G and O check). The
+    # harness runs them as an operator, exactly as a server admin would.
+    ctl command "op @a" >/dev/null 2>&1 || true
+    ctl wait 4
 }
 
 block_state() { ctl block "$1" "$2" "$3" | jq -r '.state // empty'; }
@@ -138,16 +152,42 @@ arena() {
     [ "$(block_name "$X0" $Y 0)" = "minecraft:air" ] || fail "the arena air above the floor is not air"
 }
 
-set_block() { # set_block X Y Z STATE
-    ctl command "execute in minecraft:the_end run setblock $1 $2 $3 $4" >/dev/null
+# A roofed stone chamber in the Overworld: the sky lights nothing inside, so the
+# light aspect is 0 until a block emits, and the weather/day phases cannot leak in.
+world_arena() {
+    ctl command "execute in minecraft:overworld run tp @s $X1.5 101 $Z1.5" >/dev/null
+    local loaded=false
+    for _ in $(seq 1 120); do
+        ctl wait 5 >/dev/null
+        if [ "$(ctl block "$X1" 100 "$Z1" | jq -r '.loaded // false')" = true ]; then
+            loaded=true
+            break
+        fi
+    done
+    [ "$loaded" = true ] || fail "the Overworld chamber chunk never loaded"
+    # No hostile spawns in the dark chamber at midnight; the player is in creative.
+    ctl command "difficulty peaceful" >/dev/null
+    ctl command "weather clear" >/dev/null
+    ctl command "time set noon" >/dev/null
+    ctl command "fill $((X1 - 5)) 100 $((Z1 - 5)) $((X1 + 5)) 104 $((Z1 + 5)) minecraft:stone" >/dev/null
+    ctl wait 6 >/dev/null
+    ctl command "fill $((X1 - 4)) 101 $((Z1 - 4)) $((X1 + 4)) 103 $((Z1 + 4)) minecraft:air" >/dev/null
+    ctl wait 12 >/dev/null
+    [ "$(block_name "$X1" 100 "$Z1")" = "minecraft:stone" ] || fail "the chamber floor is not stone"
+    [ "$(block_name "$X1" $YW "$Z1")" = "minecraft:air" ] || fail "the chamber interior is not air"
+}
+
+set_block_in() { # set_block_in DIMENSION X Y Z STATE
+    ctl command "execute in $1 run setblock $2 $3 $4 $5" >/dev/null
     ctl wait 5 >/dev/null
 }
+set_block() { set_block_in minecraft:the_end "$@"; }
 
 # `/integrateddynamics info X Y Z`: parse the value and status out of the reply.
 info() { # info X Y Z
     say "integrateddynamics info $1 $2 $3"
     ctl wait 12 >/dev/null
-    INFO_LINE=$(ctl messages 12 | jq -r '.chat[]' | grep -m1 'value' || true)
+    INFO_LINE=$(newest 'value [0-9-]+;')
     [ -n "$INFO_LINE" ] || fail "no /integrateddynamics info reply"
     VALUE=$(sed -n 's/.*value \([0-9-]*\);.*/\1/p' <<<"$INFO_LINE")
     STATUS=$(sed -n 's/.*status \([a-z]*\).*/\1/p' <<<"$INFO_LINE")
@@ -155,11 +195,22 @@ info() { # info X Y Z
     echo "  $INFO_LINE" >&2
 }
 
+# The aspects line of `/integrateddynamics info`, e.g. `up=isday`.
+aspects_reply() { # aspects_reply X Y Z
+    say "integrateddynamics info $1 $2 $3"
+    ctl wait 12 >/dev/null
+    newest 'aspects '
+}
+
 probe() { # probe X Y Z: the engine's strongest signal at a position
     say "integrateddynamics probe $1 $2 $3"
     ctl wait 12 >/dev/null
-    PROBE_LINE=$(ctl messages 12 | jq -r '.chat[]' | grep -m1 'neighbour signal' || true)
+    PROBE_LINE=$(newest 'neighbour signal')
     echo "  ${PROBE_LINE:-no probe reply}" >&2
+    case "$PROBE_LINE" in
+        *"neighbour signal "[0-9]*) ;;
+        *) fail "the probe readout did not parse: ${PROBE_LINE:-no reply}" ;;
+    esac
 }
 
 expect_value() { # expect_value VALUE STATUS LABEL
@@ -194,6 +245,65 @@ scene() {
     set_block $((X0 + 2)) $Y 0 "integrateddynamics:cable[part_east=writer]"
     set_block $((X0 + 3)) $Y 0 "minecraft:redstone_lamp"
     ctl wait 10 >/dev/null
+}
+
+# The World Reader rig: a cable with a world reader on its up face and a writer on
+# its east face, and a lamp east of it. The up face targets (X1,103,Z1).
+world_scene() {
+    set_block_in minecraft:overworld "$X1" $YW "$Z1" \
+        "integrateddynamics:cable[part_up=world_reader,part_east=writer]"
+    set_block_in minecraft:overworld $((X1 + 1)) $YW "$Z1" "minecraft:redstone_lamp"
+    ctl wait 10 >/dev/null
+}
+
+aspect() { # aspect FACE NAME
+    say "integrateddynamics aspect $X1 $YW $Z1 $1 $2"
+    ctl wait 8 >/dev/null
+    local reply
+    reply=$(newest '\): aspect ')
+    echo "  ${reply:-no aspect reply}" >&2
+    case "$reply" in
+        *"aspect $2"*) ;;
+        *) fail "the aspect command did not report $2: ${reply:-no reply}" ;;
+    esac
+}
+
+expect_aspect() { # expect_aspect FACE EXPECTED LABEL
+    local line
+    line=$(aspects_reply "$X1" $YW "$Z1")
+    [ -n "$line" ] || fail "$3: no aspects line in the info reply"
+    echo "  $line" >&2
+    case "$line" in
+        *"$1=$2"*) ;;
+        *) fail "$3: aspects is '$line', expected $1=$2" ;;
+    esac
+}
+
+# `/weather` sets the target; the level's rain/thunder levels then move 0.01 per
+# tick (vanilla `advanceWeatherCycle`). `Level.isRaining` is a rain level above
+# 0.2 (about 20 ticks) and `isThundering` a thunder level above 0.9 (about 90),
+# and `sky_darken` carries the rain (+3) and thunder (+10) darkening until they
+# fall again, which `isday` reads. So a weather change is waited out.
+weather() { # weather "rain 1000000" | clear | "thunder 1000000"
+    ctl command "weather $1" >/dev/null
+    case "$1" in
+        clear) ctl wait 140 >/dev/null ;;
+        thunder*) ctl wait 140 >/dev/null ;;
+        *) ctl wait 60 >/dev/null ;;
+    esac
+}
+time_set() { ctl command "time set $1" >/dev/null; ctl wait 10 >/dev/null; }
+
+part_cmd() { # part_cmd X Y Z FACE PART: the harness path, reply parsed
+    say "integrateddynamics part $1 $2 $3 $4 $5"
+    ctl wait 8 >/dev/null
+    local reply
+    reply=$(newest ' on the ')
+    echo "  ${reply:-no part reply}" >&2
+    case "$reply" in
+        *"$5 on the $4 side"*) ;;
+        *) fail "the part command did not report $5 on the $4 side: ${reply:-no reply}" ;;
+    esac
 }
 
 run() {
@@ -236,7 +346,7 @@ run() {
 
     echo "== D: two writers on one network both light =="
     set_block $((X0 + 1)) $Y -1 "minecraft:redstone_lamp"
-    say "integrateddynamics part $((X0 + 1)) $Y 0 north writer"
+    part_cmd $((X0 + 1)) $Y 0 north writer
     ctl wait 10 >/dev/null
     info $((X0 + 1)) $Y 0
     lamp_lit $((X0 + 1)) $Y -1 "D"
@@ -250,7 +360,7 @@ run() {
     lamp_dark $((X0 + 7)) $Y 4 "E"
 
     echo "== F: removing the reader part drops the channel to 0 =="
-    say "integrateddynamics part $X0 $Y 0 west none"
+    part_cmd $X0 $Y 0 west none
     ctl wait 10 >/dev/null
     info "$X0" $Y 0
     expect_value 0 inactive "F"
@@ -266,7 +376,7 @@ run() {
     ctl wait 4 >/dev/null
     ctl command "execute in minecraft:the_end run tp @s $((X0 + 5)).5 $Y 0.5" >/dev/null
     ctl wait 8 >/dev/null
-    local reply aim
+    local reply aim parts
     aim=$(ctl look-at-block $((X0 + 6)) $((Y + 1)) 0 west 2>&1) \
         || fail "cannot aim at the cable's west face: $(tr -d '\n' <<<"$aim" | cut -c1-300)"
     reply=$(ctl interact $((X0 + 6)) $((Y + 1)) 0 west 2>&1) \
@@ -274,62 +384,136 @@ run() {
     ctl wait 8 >/dev/null
     say "integrateddynamics info $((X0 + 6)) $((Y + 1)) 0"
     ctl wait 12 >/dev/null
-    local parts
-    parts=$(ctl messages 12 | jq -r '.chat[]' | grep -m1 'parts' || true)
+    parts=$(newest 'parts ')
     echo "  $parts" >&2
     case "$parts" in
         *west=reader*) ;;
         *) fail "the right click did not place the reader on the west face: ${parts:-no reply}" ;;
     esac
-}
 
-control_leg() {
-    echo "== control: the same binary with an unusable .horizon-cache =="
-    # A regular file where the directory must be: the bundle cannot write its
-    # content, so the ids it declares must be unknown.
-    rm -rf "$CACHE"
-    : > "$CACHE"
-    launch "$CONTROL_WORLD"
-    ctl command "execute in minecraft:the_end run tp @s 0.5 101 0.5" >/dev/null || true
+    echo "== slice 2: the World Reader, in a roofed Overworld chamber =="
+    world_arena
+    world_scene
+
+    echo "== H: the light aspect reads the glowstone above it as 15 =="
+    aspect up light
+    set_block_in minecraft:overworld "$X1" 103 "$Z1" "minecraft:glowstone"
     ctl wait 10 >/dev/null
-    ctl command "setblock 0 100 0 integrateddynamics:cable" >/dev/null 2>&1 || true
-    ctl wait 6 >/dev/null
-    local block
-    block=$(block_name 0 100 0)
-    echo "  block: $block"
-    [ "$block" != "integrateddynamics:cable" ] \
-        || fail "the control placed a logic cable, so the embedded file proves nothing"
-    ctl quit >/dev/null 2>&1 || true
-    # Unblock: the next launch re-creates the cache directory itself.
-    rm -f "$CACHE"
-    sleep 2
-}
+    info "$X1" $YW "$Z1"
+    expect_value "$EXPECT_WORLD_LIGHT" active "H"
+    expect_aspect up light "H"
+    lamp_lit $((X1 + 1)) $YW "$Z1" "H"
 
-# The embedded leg's own proof: the bundle wrote *its own* content where the
-# control leg blocks it, so the control is not vacuous. Byte-identity with the
-# built content/ mod is the claim: the bundle's data/ copy is what `native_data!`
-# compiles in, and this is what the game then registered from the cache.
-require_embedded_cache() {
-    local built=$PORT/content/integrateddynamics.hmod
-    [ -f "$EMBEDDED_FILE" ] \
-        || fail "the bundle did not write $EMBEDDED_FILE, so the control leg would prove nothing"
-    [ -f "$built" ] || fail "missing the built content mod: $built"
-    local written_sha built_sha
-    written_sha=$(sha256sum "$EMBEDDED_FILE" | cut -d' ' -f1)
-    built_sha=$(sha256sum "$built" | cut -d' ' -f1)
-    echo "  embedded content written: $EMBEDDED_FILE ($(stat -c %s "$EMBEDDED_FILE") B) sha256=$written_sha" >&2
-    echo "  built content/          : $built ($(stat -c %s "$built") B) sha256=$built_sha" >&2
-    cmp -s "$EMBEDDED_FILE" "$built" \
-        || fail "the written embedded content is not byte-identical to $built"
-    echo "  embedded content is byte-identical to the built content/ mod" >&2
+    echo "== I: the same aspect reads 0 once the glowstone becomes stone =="
+    set_block_in minecraft:overworld "$X1" 103 "$Z1" "minecraft:stone"
+    ctl wait 10 >/dev/null
+    info "$X1" $YW "$Z1"
+    expect_value 0 inactive "I"
+    lamp_dark $((X1 + 1)) $YW "$Z1" "I"
+
+    echo "== J: weather_raining: clear is 0, rain is 15 =="
+    aspect up weather_raining
+    weather clear
+    info "$X1" $YW "$Z1"
+    expect_value 0 inactive "J (clear)"
+    lamp_dark $((X1 + 1)) $YW "$Z1" "J (clear)"
+    weather "rain 1000000"
+    info "$X1" $YW "$Z1"
+    expect_value 15 active "J (rain)"
+    lamp_lit $((X1 + 1)) $YW "$Z1" "J (rain)"
+
+    echo "== K: weather_clear: clear is 15, rain is 0 =="
+    aspect up weather_clear
+    weather clear
+    info "$X1" $YW "$Z1"
+    expect_value 15 active "K (clear)"
+    lamp_lit $((X1 + 1)) $YW "$Z1" "K (clear)"
+    weather "rain 1000000"
+    info "$X1" $YW "$Z1"
+    expect_value 0 inactive "K (rain)"
+    lamp_dark $((X1 + 1)) $YW "$Z1" "K (rain)"
+
+    echo "== L: weather_thunder: thunder is 15, clear is 0 =="
+    aspect up weather_thunder
+    weather "thunder 1000000"
+    info "$X1" $YW "$Z1"
+    expect_value 15 active "L (thunder)"
+    lamp_lit $((X1 + 1)) $YW "$Z1" "L (thunder)"
+    weather clear
+    info "$X1" $YW "$Z1"
+    expect_value 0 inactive "L (clear)"
+    lamp_dark $((X1 + 1)) $YW "$Z1" "L (clear)"
+
+    echo "== M: isday: noon is 15, midnight is 0 =="
+    aspect up isday
+    weather clear
+    time_set noon
+    info "$X1" $YW "$Z1"
+    expect_value 15 active "M (noon)"
+    lamp_lit $((X1 + 1)) $YW "$Z1" "M (noon)"
+    time_set midnight
+    info "$X1" $YW "$Z1"
+    expect_value 0 inactive "M (midnight)"
+    lamp_dark $((X1 + 1)) $YW "$Z1" "M (midnight)"
+
+    echo "== N: isnight: midnight is 15, noon is 0 =="
+    aspect up isnight
+    time_set midnight
+    info "$X1" $YW "$Z1"
+    expect_value 15 active "N (midnight)"
+    lamp_lit $((X1 + 1)) $YW "$Z1" "N (midnight)"
+    time_set noon
+    info "$X1" $YW "$Z1"
+    expect_value 0 inactive "N (noon)"
+    lamp_dark $((X1 + 1)) $YW "$Z1" "N (noon)"
+
+    echo "== O: right-clicking a cable face with the World Reader places it =="
+    set_block_in minecraft:overworld "$X1" $YW $((Z1 + 3)) "integrateddynamics:cable"
+    ctl command "item replace entity @s hotbar.0 with integrateddynamics:part_world_reader 2" >/dev/null
+    ctl select 1 >/dev/null
+    ctl wait 4 >/dev/null
+    ctl command "tp @s $((X1 - 1)).5 $Y $((Z1 + 3)).5" >/dev/null
+    ctl wait 8 >/dev/null
+    aim=$(ctl look-at-block "$X1" $YW $((Z1 + 3)) west 2>&1) \
+        || fail "cannot aim at the second cable's west face: $(tr -d '\n' <<<"$aim" | cut -c1-300)"
+    reply=$(ctl interact "$X1" $YW $((Z1 + 3)) west 2>&1) \
+        || fail "ctl interact on the second cable's west face failed: $(tr -d '\n' <<<"$reply" | cut -c1-300)"
+    ctl wait 8 >/dev/null
+    say "integrateddynamics info $X1 $YW $((Z1 + 3))"
+    ctl wait 12 >/dev/null
+    parts=$(newest 'parts ')
+    echo "  $parts" >&2
+    case "$parts" in
+        *west=world_reader*) ;;
+        *) fail "the right click did not place the world reader on the west face: ${parts:-no reply}" ;;
+    esac
+    local aspect_line
+    aspect_line=$(newest 'aspects ')
+    echo "  ${aspect_line:-no aspects line}" >&2
+    case "$aspect_line" in
+        *west=light*) ;;
+        *) fail "a placed world reader did not report its default light aspect: ${aspect_line:-no reply}" ;;
+    esac
+
+    echo "== P: an unknown aspect and a face without a World Reader are refused =="
+    say "integrateddynamics aspect $X1 $YW $((Z1 + 3)) west teleport"
+    ctl wait 12 >/dev/null
+    local refusal
+    refusal=$(newest 'unknown aspect')
+    case "$refusal" in
+        *unknown\ aspect*) echo "  $refusal" >&2 ;;
+        *) fail "an unknown aspect was not refused: ${refusal:-no reply}" ;;
+    esac
+    say "integrateddynamics aspect $X1 $YW $((Z1 + 3)) east light"
+    ctl wait 12 >/dev/null
+    refusal=$(newest 'no World Reader')
+    case "$refusal" in
+        *"no World Reader on the east side"*) echo "  $refusal" >&2 ;;
+        *) fail "an aspect on a face without a world reader was not refused: ${refusal:-no reply}" ;;
+    esac
 }
 
 launch
 run
-if [ "$EMBEDDED" = 1 ]; then
-    require_embedded_cache
-fi
-if [ "$EMBEDDED" = 1 ] && [ "$CONTROL" = 1 ]; then
-    control_leg
-fi
-echo "PASS: a Redstone Reader fed a Logic Cable network and a Redstone Writer three cables away lit a lamp at level ${EXPECT_A}; removing the input, a wire line at 14, a torch, a second writer, a disconnected network, a removed part and a right-click placement all matched"
+
+echo "PASS: a Redstone Reader and a World Reader fed a Logic Cable network and a Redstone Writer emitted the strongest reading; a Redstone Reader fed a cable network lit a lamp at level ${EXPECT_A}; the World Reader read light ${EXPECT_WORLD_LIGHT}, rain/clear/thunder, day and night, a placed world-reader item and its default aspect, and the two refusals"

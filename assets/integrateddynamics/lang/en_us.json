@@ -3,5 +3,6 @@
   "item.integrateddynamics.crystalized_menril_chunk": "Crystallized Menril Chunk",
   "item.integrateddynamics.part_redstone_reader": "Redstone Reader",
   "item.integrateddynamics.part_redstone_writer": "Redstone Writer",
+  "item.integrateddynamics.part_world_reader": "World Reader",
   "itemGroup.integrateddynamics.integrateddynamics": "Integrated Dynamics"
 }
